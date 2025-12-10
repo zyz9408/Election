@@ -1,0 +1,317 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { sendMessageToGemini, resetGame, startNewGameWithProfile } from './services/geminiService';
+import { Message, GameState, CharacterProfile } from './types';
+import { Typewriter } from './components/Typewriter';
+
+// Icons
+const SendIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+  </svg>
+);
+
+const RestartIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+  </svg>
+);
+
+const UserIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-12 h-12 text-zinc-500">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+  </svg>
+);
+
+function App() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
+  const [gameState, setGameState] = useState<GameState>({
+    started: false,
+    loading: false,
+    error: null,
+  });
+  
+  // Character Creation State
+  const [character, setCharacter] = useState<CharacterProfile>({
+    name: '阿强',
+    role: '四九 (草鞋)',
+    appearance: '身穿旧皮衣，眼神冷峻，右脸有一道浅疤',
+    background: '在果栏长大，跟师爷苏混了三年，做事利落话不多。'
+  });
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, gameState.loading, gameState.started]);
+
+  const processResponse = useCallback((response: { text: string, options: string[] }) => {
+    const responseMessage: Message = { 
+      role: 'model', 
+      content: response.text, 
+      options: response.options,
+      timestamp: Date.now() 
+    };
+    setMessages(prev => [...prev, responseMessage]);
+  }, []);
+
+  const handleStartGame = async () => {
+    setGameState(prev => ({ ...prev, started: true, loading: true }));
+    try {
+      const response = await startNewGameWithProfile(character);
+      processResponse(response);
+    } catch (e) {
+      console.error(e);
+      setGameState(prev => ({ ...prev, error: "连接龙头失败，请重试。", started: false }));
+    } finally {
+      setGameState(prev => ({ ...prev, loading: false }));
+    }
+  };
+
+  const handleSend = async (textOverride?: string) => {
+    const userText = textOverride || input.trim();
+    if (!userText || gameState.loading) return;
+
+    if (!textOverride) setInput('');
+    
+    // Optimistic update
+    const newMessage: Message = { role: 'user', content: userText, timestamp: Date.now() };
+    setMessages(prev => [...prev, newMessage]);
+    setGameState(prev => ({ ...prev, loading: true }));
+
+    try {
+      const aiResponse = await sendMessageToGemini(userText);
+      processResponse(aiResponse);
+    } catch (error) {
+      console.error(error);
+      setMessages(prev => [...prev, { role: 'model', content: "（通讯中断...）", timestamp: Date.now() }]);
+    } finally {
+      setGameState(prev => ({ ...prev, loading: false }));
+      // Focus back on input only if not on mobile (sometimes annoying) but generally good
+      setTimeout(() => inputRef.current?.focus(), 100);
+    }
+  };
+
+  const handleRestart = () => {
+    if (window.confirm("确定要重新开始吗？所有江湖恩怨将一笔勾销。")) {
+      resetGame();
+      setMessages([]);
+      setGameState({ started: false, loading: false, error: null });
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleSend();
+    }
+  };
+
+  // Get the last message to check for options
+  const lastMessage = messages[messages.length - 1];
+  const showOptions = !gameState.loading && lastMessage?.role === 'model' && lastMessage?.options && lastMessage.options.length > 0;
+
+  // Render Character Creation Screen
+  if (!gameState.started) {
+    return (
+      <div className="flex flex-col min-h-screen bg-triad-black font-serif text-gray-300 items-center justify-center p-4">
+        <div className="w-full max-w-2xl bg-zinc-900/50 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden backdrop-blur-sm">
+          <header className="bg-zinc-950 p-6 border-b border-zinc-800 text-center">
+             <h1 className="text-3xl font-bold tracking-widest text-triad-red uppercase drop-shadow-md mb-2">
+              和联胜：话事人
+            </h1>
+            <p className="text-zinc-500 text-sm">
+              创建你的角色档案
+            </p>
+          </header>
+          
+          <div className="p-8 space-y-6">
+            <div className="flex flex-col md:flex-row gap-6">
+              <div className="flex-shrink-0 flex justify-center items-start pt-2">
+                <div className="w-24 h-24 bg-zinc-800 rounded-full flex items-center justify-center border-2 border-zinc-700">
+                  <UserIcon />
+                </div>
+              </div>
+              
+              <div className="flex-1 space-y-4">
+                <div>
+                  <label className="block text-zinc-400 text-sm mb-1 uppercase tracking-wider">姓名 / 花名</label>
+                  <input 
+                    type="text" 
+                    value={character.name}
+                    onChange={e => setCharacter({...character, name: e.target.value})}
+                    className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-white focus:border-triad-red focus:ring-1 focus:ring-triad-red outline-none transition"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-zinc-400 text-sm mb-1 uppercase tracking-wider">身份 / 职位</label>
+                  <input 
+                    type="text" 
+                    value={character.role}
+                    onChange={e => setCharacter({...character, role: e.target.value})}
+                    className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-white focus:border-triad-red focus:ring-1 focus:ring-triad-red outline-none transition"
+                    placeholder="例如：四九、蓝灯笼、红棍"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div>
+               <label className="block text-zinc-400 text-sm mb-1 uppercase tracking-wider">外貌特征</label>
+               <input 
+                  type="text" 
+                  value={character.appearance}
+                  onChange={e => setCharacter({...character, appearance: e.target.value})}
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-white focus:border-triad-red focus:ring-1 focus:ring-triad-red outline-none transition"
+                  placeholder="例如：高大威猛，戴金劳，穿人字拖"
+                />
+            </div>
+
+            <div>
+              <label className="block text-zinc-400 text-sm mb-1 uppercase tracking-wider">背景故事</label>
+              <textarea 
+                value={character.background}
+                onChange={e => setCharacter({...character, background: e.target.value})}
+                className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-white focus:border-triad-red focus:ring-1 focus:ring-triad-red outline-none h-24 transition resize-none"
+                placeholder="你的老大是谁？你有什么特长？"
+              />
+            </div>
+
+            {gameState.error && (
+              <div className="text-red-500 text-sm text-center bg-red-900/20 p-2 rounded">
+                {gameState.error}
+              </div>
+            )}
+
+            <button 
+              onClick={handleStartGame}
+              disabled={gameState.loading}
+              className="w-full bg-triad-red hover:bg-red-900 text-white font-bold py-4 rounded transition-all tracking-[0.2em] uppercase shadow-lg flex justify-center items-center gap-2 group"
+            >
+              {gameState.loading ? (
+                <span>正在入会...</span>
+              ) : (
+                <>
+                  <span>入会 (开始游戏)</span>
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5 group-hover:translate-x-1 transition-transform">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                  </svg>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Render Main Game
+  return (
+    <div className="flex flex-col h-full bg-triad-black font-serif text-gray-300 relative selection:bg-triad-red selection:text-white">
+      
+      {/* Header */}
+      <header className="flex-none p-4 border-b border-zinc-800 bg-zinc-900/90 backdrop-blur-sm z-10 shadow-lg flex justify-between items-center">
+        <div>
+          <h1 className="text-2xl font-bold tracking-widest text-triad-red uppercase drop-shadow-md">
+            和联胜 <span className="text-zinc-500 text-sm align-middle ml-2 font-sans tracking-normal">话事人 ELECTION</span>
+          </h1>
+          <div className="text-xs text-zinc-600 font-sans mt-1">
+             {character.name} | {character.role}
+          </div>
+        </div>
+        <button 
+          onClick={handleRestart}
+          className="p-2 text-zinc-500 hover:text-red-500 transition-colors rounded-full hover:bg-zinc-800"
+          title="重新开始"
+        >
+          <RestartIcon />
+        </button>
+      </header>
+
+      {/* Main Game Area */}
+      <main className="flex-1 overflow-y-auto p-4 md:p-8 space-y-6 container mx-auto max-w-4xl scroll-smooth">
+        {messages.map((msg, idx) => (
+          <div 
+            key={msg.timestamp + idx} 
+            className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
+          >
+            <div 
+              className={`max-w-[90%] md:max-w-[80%] rounded-lg p-4 leading-relaxed tracking-wide shadow-xl border ${
+                msg.role === 'user' 
+                  ? 'bg-zinc-800 border-zinc-700 text-zinc-200' 
+                  : 'bg-black/50 border-zinc-900 text-zinc-300 border-l-4 border-l-triad-red'
+              }`}
+            >
+              {msg.role === 'model' && idx === messages.length - 1 && gameState.loading === false ? (
+                 <Typewriter text={msg.content} />
+              ) : (
+                <span className="whitespace-pre-wrap">{msg.content}</span>
+              )}
+            </div>
+          </div>
+        ))}
+        
+        {/* Loading Indicator */}
+        {gameState.loading && (
+          <div className="flex justify-start animate-pulse">
+             <div className="bg-black/50 border-zinc-900 border-l-4 border-l-zinc-600 rounded-lg p-4 text-zinc-500 text-sm italic">
+                ... 正在权衡利弊 ...
+             </div>
+          </div>
+        )}
+        
+        <div ref={messagesEndRef} />
+      </main>
+
+      {/* Input Area */}
+      <footer className="flex-none p-4 md:p-6 bg-zinc-900 border-t border-zinc-800">
+        <div className="container mx-auto max-w-4xl flex flex-col gap-4">
+          
+          {/* Options Chips */}
+          {showOptions && (
+            <div className="flex flex-wrap gap-2 justify-start animate-fade-in-up">
+              {lastMessage.options!.map((option, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleSend(option)}
+                  className="bg-zinc-800/80 hover:bg-triad-red/90 text-zinc-300 hover:text-white px-4 py-2 rounded-full border border-zinc-700 hover:border-triad-red transition-all text-sm shadow-sm active:scale-95 text-left"
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex gap-3 relative">
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={gameState.loading}
+              placeholder={gameState.loading ? "等待回应..." : "输入你的行动..."}
+              className="flex-1 bg-zinc-950 text-white placeholder-zinc-600 border border-zinc-700 rounded-md px-4 py-3 focus:outline-none focus:border-triad-red focus:ring-1 focus:ring-triad-red transition-all font-sans"
+              autoFocus
+            />
+            <button
+              onClick={() => handleSend()}
+              disabled={gameState.loading || !input.trim()}
+              className="bg-triad-red hover:bg-red-900 text-white px-6 py-2 rounded-md font-bold uppercase tracking-wider transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg shadow-red-900/20"
+            >
+              <span className="hidden md:inline">行动</span>
+              <SendIcon />
+            </button>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+export default App;
