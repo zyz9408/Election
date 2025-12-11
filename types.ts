@@ -1,3 +1,4 @@
+
 export interface Message {
   role: 'user' | 'model';
   content: string;
@@ -16,4 +17,10 @@ export interface CharacterProfile {
   role: string;
   appearance: string;
   background: string;
+}
+
+export interface ApiConfig {
+  apiKey: string;
+  baseUrl?: string;
+  model: string;
 }

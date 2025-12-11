@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { sendMessageToGemini, resetGame, startNewGameWithProfile } from './services/geminiService';
-import { Message, GameState, CharacterProfile } from './types';
+import { sendMessageToGemini, resetGame, startNewGameWithProfile, updateApiConfig } from './services/geminiService';
+import { Message, GameState, CharacterProfile, ApiConfig } from './types';
 import { Typewriter } from './components/Typewriter';
 
 // Icons
@@ -22,6 +23,19 @@ const UserIcon = () => (
   </svg>
 );
 
+const SettingsIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+  </svg>
+);
+
+const DEFAULT_CONFIG: ApiConfig = {
+  apiKey: '',
+  baseUrl: '',
+  model: 'gemini-3-pro-preview',
+};
+
 function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -30,7 +44,9 @@ function App() {
     loading: false,
     error: null,
   });
-  
+  const [showSettings, setShowSettings] = useState(false);
+  const [apiConfig, setApiConfig] = useState<ApiConfig>(DEFAULT_CONFIG);
+
   // Character Creation State
   const [character, setCharacter] = useState<CharacterProfile>({
     name: '阿强',
@@ -41,6 +57,27 @@ function App() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Load config from local storage on mount
+  useEffect(() => {
+    const savedConfig = localStorage.getItem('triad_api_config');
+    if (savedConfig) {
+      try {
+        const parsed = JSON.parse(savedConfig);
+        setApiConfig({ ...DEFAULT_CONFIG, ...parsed });
+        updateApiConfig({ ...DEFAULT_CONFIG, ...parsed });
+      } catch (e) {
+        console.error("Failed to parse saved config", e);
+      }
+    }
+  }, []);
+
+  const saveConfig = (newConfig: ApiConfig) => {
+    setApiConfig(newConfig);
+    updateApiConfig(newConfig);
+    localStorage.setItem('triad_api_config', JSON.stringify(newConfig));
+    setShowSettings(false);
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -61,13 +98,19 @@ function App() {
   }, []);
 
   const handleStartGame = async () => {
+    if (!apiConfig.apiKey && !process.env.API_KEY) {
+       setShowSettings(true);
+       alert("请先设置 API Key");
+       return;
+    }
+
     setGameState(prev => ({ ...prev, started: true, loading: true }));
     try {
       const response = await startNewGameWithProfile(character);
       processResponse(response);
     } catch (e) {
       console.error(e);
-      setGameState(prev => ({ ...prev, error: "连接龙头失败，请重试。", started: false }));
+      setGameState(prev => ({ ...prev, error: "连接龙头失败，请检查API设置。", started: false }));
     } finally {
       setGameState(prev => ({ ...prev, loading: false }));
     }
@@ -89,7 +132,7 @@ function App() {
       processResponse(aiResponse);
     } catch (error) {
       console.error(error);
-      setMessages(prev => [...prev, { role: 'model', content: "（通讯中断...）", timestamp: Date.now() }]);
+      setMessages(prev => [...prev, { role: 'model', content: "（通讯中断...请检查API配置）", timestamp: Date.now() }]);
     } finally {
       setGameState(prev => ({ ...prev, loading: false }));
       // Focus back on input only if not on mobile (sometimes annoying) but generally good
@@ -118,7 +161,86 @@ function App() {
   // Render Character Creation Screen
   if (!gameState.started) {
     return (
-      <div className="flex flex-col min-h-screen bg-triad-black font-serif text-gray-300 items-center justify-center p-4">
+      <div className="flex flex-col min-h-screen bg-triad-black font-serif text-gray-300 items-center justify-center p-4 relative">
+        {/* Settings Button (Top Right) */}
+        <div className="absolute top-4 right-4 z-50">
+           <button 
+             onClick={() => setShowSettings(true)}
+             className="p-2 bg-zinc-800 rounded-full hover:bg-zinc-700 transition-colors text-zinc-400 hover:text-white"
+           >
+             <SettingsIcon />
+           </button>
+        </div>
+
+        {/* Settings Modal */}
+        {showSettings && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+             <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-full max-w-md shadow-2xl space-y-4">
+                <h2 className="text-xl font-bold text-white mb-4">API 设置</h2>
+                
+                <div>
+                  <label className="block text-xs text-zinc-500 uppercase mb-1">Base URL (Optional)</label>
+                  <input 
+                    type="text" 
+                    value={apiConfig.baseUrl || ''}
+                    onChange={(e) => setApiConfig({...apiConfig, baseUrl: e.target.value})}
+                    placeholder="https://generativelanguage.googleapis.com"
+                    className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-white text-sm focus:border-triad-red outline-none"
+                  />
+                  <p className="text-[10px] text-zinc-600 mt-1">留空则使用默认 Google Gemini 地址。</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-zinc-500 uppercase mb-1">API Key</label>
+                  <input 
+                    type="password" 
+                    value={apiConfig.apiKey}
+                    onChange={(e) => setApiConfig({...apiConfig, apiKey: e.target.value})}
+                    placeholder="sk-..."
+                    className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-white text-sm focus:border-triad-red outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-zinc-500 uppercase mb-1">Model Name</label>
+                   <input 
+                    type="text" 
+                    value={apiConfig.model}
+                    onChange={(e) => setApiConfig({...apiConfig, model: e.target.value})}
+                    placeholder="gemini-3-pro-preview"
+                    className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-white text-sm focus:border-triad-red outline-none"
+                  />
+                  <div className="flex flex-wrap gap-2 mt-2">
+                     {['gemini-3-pro-preview', 'gemini-2.5-flash', 'gpt-4o', 'deepseek-chat'].map(m => (
+                       <button 
+                         key={m}
+                         onClick={() => setApiConfig({...apiConfig, model: m})}
+                         className="text-[10px] px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded border border-zinc-700"
+                       >
+                         {m}
+                       </button>
+                     ))}
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 mt-6">
+                  <button 
+                    onClick={() => setShowSettings(false)}
+                    className="px-4 py-2 text-sm text-zinc-400 hover:text-white"
+                  >
+                    取消
+                  </button>
+                  <button 
+                    onClick={() => saveConfig(apiConfig)}
+                    className="px-4 py-2 text-sm bg-triad-red hover:bg-red-900 text-white rounded"
+                  >
+                    保存设置
+                  </button>
+                </div>
+             </div>
+          </div>
+        )}
+
         <div className="w-full max-w-2xl bg-zinc-900/50 border border-zinc-800 rounded-xl shadow-2xl overflow-hidden backdrop-blur-sm">
           <header className="bg-zinc-950 p-6 border-b border-zinc-800 text-center">
              <h1 className="text-3xl font-bold tracking-widest text-triad-red uppercase drop-shadow-md mb-2">
@@ -224,13 +346,22 @@ function App() {
              {character.name} | {character.role}
           </div>
         </div>
-        <button 
-          onClick={handleRestart}
-          className="p-2 text-zinc-500 hover:text-red-500 transition-colors rounded-full hover:bg-zinc-800"
-          title="重新开始"
-        >
-          <RestartIcon />
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => setShowSettings(true)}
+            className="p-2 text-zinc-500 hover:text-white transition-colors rounded-full hover:bg-zinc-800"
+            title="设置"
+          >
+            <SettingsIcon />
+          </button>
+          <button 
+            onClick={handleRestart}
+            className="p-2 text-zinc-500 hover:text-red-500 transition-colors rounded-full hover:bg-zinc-800"
+            title="重新开始"
+          >
+            <RestartIcon />
+          </button>
+        </div>
       </header>
 
       {/* Main Game Area */}
@@ -260,7 +391,7 @@ function App() {
         {gameState.loading && (
           <div className="flex justify-start animate-pulse">
              <div className="bg-black/50 border-zinc-900 border-l-4 border-l-zinc-600 rounded-lg p-4 text-zinc-500 text-sm italic">
-                ... 正在权衡利弊 ...
+                正在权衡利弊
              </div>
           </div>
         )}
@@ -310,6 +441,75 @@ function App() {
           </div>
         </div>
       </footer>
+      
+      {/* Settings Modal (Also available in game) */}
+       {showSettings && gameState.started && (
+          <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
+             <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-full max-w-md shadow-2xl space-y-4">
+                <h2 className="text-xl font-bold text-white mb-4">API 设置</h2>
+                
+                <div>
+                  <label className="block text-xs text-zinc-500 uppercase mb-1">Base URL (Optional)</label>
+                  <input 
+                    type="text" 
+                    value={apiConfig.baseUrl || ''}
+                    onChange={(e) => setApiConfig({...apiConfig, baseUrl: e.target.value})}
+                    placeholder="https://generativelanguage.googleapis.com"
+                    className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-white text-sm focus:border-triad-red outline-none"
+                  />
+                  <p className="text-[10px] text-zinc-600 mt-1">留空则使用默认 Google Gemini 地址。</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-zinc-500 uppercase mb-1">API Key</label>
+                  <input 
+                    type="password" 
+                    value={apiConfig.apiKey}
+                    onChange={(e) => setApiConfig({...apiConfig, apiKey: e.target.value})}
+                    placeholder="sk-..."
+                    className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-white text-sm focus:border-triad-red outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs text-zinc-500 uppercase mb-1">Model Name</label>
+                   <input 
+                    type="text" 
+                    value={apiConfig.model}
+                    onChange={(e) => setApiConfig({...apiConfig, model: e.target.value})}
+                    placeholder="gemini-3-pro-preview"
+                    className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-white text-sm focus:border-triad-red outline-none"
+                  />
+                   <div className="flex flex-wrap gap-2 mt-2">
+                     {['gemini-3-pro-preview', 'gemini-2.5-flash', 'gpt-4o', 'deepseek-chat'].map(m => (
+                       <button 
+                         key={m}
+                         onClick={() => setApiConfig({...apiConfig, model: m})}
+                         className="text-[10px] px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded border border-zinc-700"
+                       >
+                         {m}
+                       </button>
+                     ))}
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 mt-6">
+                  <button 
+                    onClick={() => setShowSettings(false)}
+                    className="px-4 py-2 text-sm text-zinc-400 hover:text-white"
+                  >
+                    取消
+                  </button>
+                  <button 
+                    onClick={() => saveConfig(apiConfig)}
+                    className="px-4 py-2 text-sm bg-triad-red hover:bg-red-900 text-white rounded"
+                  >
+                    保存设置
+                  </button>
+                </div>
+             </div>
+          </div>
+        )}
     </div>
   );
 }
