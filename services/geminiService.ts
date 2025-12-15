@@ -1,8 +1,7 @@
 
-
-import { GoogleGenAI, Chat } from "@google/genai";
+import { GoogleGenAI, Chat, Content } from "@google/genai";
 import { SYSTEM_INSTRUCTION, STORY_TIMELINE, NPC_TRAITS } from "../constants";
-import { CharacterProfile, ApiConfig } from "../types";
+import { CharacterProfile, ApiConfig, Message } from "../types";
 
 let chatSession: Chat | null = null;
 let currentConfig: ApiConfig = { apiKey: '', model: 'gemini-3-pro-preview' };
@@ -37,10 +36,10 @@ const buildSystemPrompt = (characterProfile?: CharacterProfile) => {
     return `${SYSTEM_INSTRUCTION}\n\n${characterContext}\n\n=== 关键NPC特征 (NPC BIBLE) ===\n${NPC_TRAITS}\n\n=== 剧情大纲 (Timeline) ===\n${STORY_TIMELINE}`;
 }
 
-const initializeChat = async (characterProfile?: CharacterProfile) => {
+const initializeChat = async (characterProfile?: CharacterProfile, historyMessages?: Message[]) => {
   // If we already have a session and it matches the current generic/sdk mode, we might reuse, 
-  // but simpler to just rebuild if null.
-  if (chatSession && !currentConfig.baseUrl) return; // Only return if using official SDK and session exists. Generic needs manual handling.
+  // but simpler to just rebuild if null or if history is provided (force rebuild).
+  if (chatSession && !currentConfig.baseUrl && !historyMessages) return; 
 
   const apiKey = currentConfig.apiKey || process.env.API_KEY;
   if (!apiKey) throw new Error("API Key not found");
@@ -52,8 +51,18 @@ const initializeChat = async (characterProfile?: CharacterProfile) => {
     try {
       const ai = new GoogleGenAI({ apiKey: apiKey });
       
+      // Convert app Message[] to SDK History format if provided
+      let sdkHistory: Content[] | undefined = undefined;
+      if (historyMessages && historyMessages.length > 0) {
+        sdkHistory = historyMessages.map(m => ({
+          role: m.role,
+          parts: [{ text: m.content }]
+        }));
+      }
+
       chatSession = ai.chats.create({
         model: currentConfig.model || 'gemini-3-pro-preview',
+        history: sdkHistory,
         config: {
           systemInstruction: fullSystemInstruction,
           temperature: 0.4, 
@@ -74,6 +83,12 @@ const initializeChat = async (characterProfile?: CharacterProfile) => {
   messageHistory = [
     { role: "system", content: fullSystemInstruction }
   ];
+
+  if (historyMessages && historyMessages.length > 0) {
+      historyMessages.forEach(m => {
+          messageHistory.push({ role: m.role === 'model' ? 'assistant' : 'user', content: m.content });
+      });
+  }
 };
 
 const cleanResponseText = (text: string): string => {
@@ -108,8 +123,19 @@ const fetchOpenAICompatible = async (userMessage: string): Promise<string> => {
     });
 
     if (!response.ok) {
-        const err = await response.text();
-        throw new Error(`API Error: ${response.status} - ${err}`);
+        const errText = await response.text();
+        
+        // Try to parse JSON error message for better display
+        let errorDetails = errText;
+        try {
+            const json = JSON.parse(errText);
+            if (json.error && json.error.message) errorDetails = json.error.message;
+        } catch(e) {}
+
+        if (response.status === 429) {
+             throw new Error(`API 额度已耗尽 (429 Quota Exceeded)。请稍后再试或检查您的 Plan。(${errorDetails})`);
+        }
+        throw new Error(`API Error: ${response.status} - ${errorDetails}`);
     }
 
     const data = await response.json();
@@ -130,7 +156,15 @@ export const startNewGameWithProfile = async (profile: CharacterProfile): Promis
   // We call initializeChat to setup the session OR the initial history array
   await initializeChat(profile);
 
-  return sendMessageToGemini("游戏开始");
+  const startPrompt = "System Command: INITIALIZE_GAME. Current Timeline: Prologue (2 Weeks BEFORE the election). Situation: Tensions are rising between Lok and Big D. Do NOT advance to the election result yet. Describe the current scene and the player's immediate situation.";
+  
+  return sendMessageToGemini(startPrompt);
+};
+
+// Function to restore history (for Time Travel / Regeneration)
+export const restoreGameHistory = async (messages: Message[], profile: CharacterProfile) => {
+    resetGame();
+    await initializeChat(profile, messages);
 };
 
 export const sendMessageToGemini = async (userMessage: string): Promise<{ text: string, options: string[] }> => {
@@ -175,11 +209,19 @@ export const sendMessageToGemini = async (userMessage: string): Promise<{ text: 
 
     return { text: cleanResponseText(rawText), options: [] };
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("API Error:", error);
+    
+    let userFriendlyMessage = `系统错误：${error instanceof Error ? error.message : 'Unknown Error'}`;
+    
+    // Catch 429 Quota Errors
+    if (error.message?.includes('429') || error.message?.includes('Quota') || error.message?.includes('RESOURCE_EXHAUSTED')) {
+        userFriendlyMessage = "⛔ API 额度已耗尽 (Quota Exceeded)。请稍后再试，或在右上角设置中更换 API Key。";
+    }
+
     return { 
-      text: `（系统错误：无法连接到主机... ${error instanceof Error ? error.message : 'Unknown Error'}）`, 
-      options: [] 
+      text: `（${userFriendlyMessage}）`, 
+      options: ['重试', '检查设置'] 
     };
   }
 };
