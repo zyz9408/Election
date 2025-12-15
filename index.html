@@ -5,6 +5,18 @@
     <link rel="icon" type="image/svg+xml" href="https://vitejs.dev/logo.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>和联胜：话事人</title>
+    <script>
+      // Suppress the Tailwind CDN "should not be used in production" warning.
+      // Since we are deploying a lightweight static app without a build step, 
+      // the CDN is the correct choice, but the warning is unnecessary noise.
+      (function() {
+        var originalWarn = console.warn;
+        console.warn = function(...args) {
+          if (args[0] && typeof args[0] === 'string' && args[0].includes('cdn.tailwindcss.com')) return;
+          originalWarn.apply(console, args);
+        };
+      })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
