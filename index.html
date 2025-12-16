@@ -860,6 +860,23 @@ function previewRawResponse(raw, maxLen = 600) {
   return s.length > maxLen ? s.slice(0, maxLen) + "…" : s;
 }
 
+function isLikelyGarbageModelText(text) {
+  const t = String(text || "").trim();
+  if (!t) return true;
+  const lower = t.toLowerCase();
+  if (lower === "assistant" || lower === "null" || lower === "undefined" || lower === "ok") return true;
+  if (t.length < 40) return true;
+  return false;
+}
+
+function stripRolePrefix(text) {
+  let t = String(text || "");
+  t = t.replace(/^\uFEFF/, "");
+  t = t.replace(/^\s*(?:assistant|system|user)\s*[:：]\s*/i, "");
+  t = t.replace(/^\s*assistant\s*\r?\n+/i, "");
+  return t;
+}
+
 function extractBestStringFromJson(root) {
   if (root == null) return null;
   const seen = new Set();
@@ -1071,7 +1088,8 @@ async function sendToModel(cmd, isRegen=false) {
       const best = extractBestStringFromJson(decoded.data);
       if (best && best.text) text = best.text.trim();
     }
-    if (!text) {
+    text = stripRolePrefix(text).trim();
+    if (!text || isLikelyGarbageModelText(text)) {
       const preview = previewRawResponse(raw);
       throw new Error("模型返回空内容（可能是服务端默认 stream=true 或返回结构不兼容）" + (preview ? "；原始返回预览：" + preview : ""));
     }
@@ -1594,6 +1612,7 @@ async function generateCustomCharacter() {
       const best = extractBestStringFromJson(decoded.data);
       if (best && best.text) text = best.text.trim();
     }
+    text = stripRolePrefix(text).trim();
     const obj = extractJsonObject(text);
     if (!obj || !obj.name || !obj.background) throw new Error("返回不是可解析的 JSON");
 
@@ -1685,6 +1704,7 @@ async function generateCharacter() {
       const best = extractBestStringFromJson(decoded.data);
       if (best && best.text) text = best.text.trim();
     }
+    text = stripRolePrefix(text).trim();
     const obj = extractJsonObject(text);
     if (!obj || !obj.name || !obj.background) throw new Error("返回不是可解析的 JSON");
 
