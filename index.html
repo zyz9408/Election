@@ -196,6 +196,7 @@
     </div>
     <div class="stack" style="margin-top:12px;">
       <button id="home-start-btn">开始游戏</button>
+      <button id="home-continue-btn" class="btn-ghost" disabled>继续上次</button>
     </div>
     <div class="small" style="margin-top:10px;">
       流程：主界面 → 角色模板选择/生成（可手写） → 进入游戏界面。<br/>
@@ -223,6 +224,19 @@
         <button id="clear-api" class="btn-ghost">清空</button>
       </div>
       <div class="small" id="api-tip" style="margin-top:8px;"></div>
+    </details>
+
+    <details class="home-settings">
+      <summary>存档 / 读档</summary>
+      <div class="small">手动存档会保留：角色、状态、时间线进度与故事记录（最多保留最近 250 条记录）。</div>
+      <label>选择存档</label>
+      <select id="save-select-home"></select>
+      <div class="stack" style="margin-top:10px;">
+        <button id="home-load-save-btn">读档</button>
+        <button id="home-delete-save-btn" class="btn-ghost">删除</button>
+        <button id="home-clear-saves-btn" class="btn-ghost">清空全部</button>
+      </div>
+      <div class="small" id="home-save-tip" style="margin-top:8px;"></div>
     </details>
   </div>
 </div>
@@ -280,6 +294,23 @@
         <button id="back-home-btn" class="btn-ghost">返回主界面</button>
       </div>
       <div class="small" id="creator-tip" style="margin-top:8px;"></div>
+
+      <details class="home-settings" id="creator-save-panel" style="margin-top:12px;">
+        <summary>存档 / 读档</summary>
+        <div class="small">你可以在进入游戏前先存一份“角色档”，以后从主页读档继续。</div>
+        <label>存档名称</label>
+        <input id="save-name-creator" placeholder="例如：我的角色-开局" />
+        <div class="stack" style="margin-top:10px;">
+          <button id="creator-save-btn">存档</button>
+        </div>
+        <label style="margin-top:10px;">读取手动存档</label>
+        <select id="save-select-creator"></select>
+        <div class="stack" style="margin-top:10px;">
+          <button id="creator-load-save-btn" class="btn-ghost">读档</button>
+          <button id="creator-delete-save-btn" class="btn-ghost">删除</button>
+        </div>
+        <div class="small" id="creator-save-tip" style="margin-top:8px;"></div>
+      </details>
       <div class="small" style="margin-top:8px;">提示：API 设置在主界面修改；进入游戏后人物设定将锁定为只读。</div>
     </div>
 
@@ -308,6 +339,23 @@
       <div class="stack" style="margin-top:12px;">
         <button id="regenerate-btn" class="btn-ghost" title="重新生成当前内容">重新生成上一段</button>
       </div>
+
+      <details class="home-settings" id="game-save-panel" style="margin-top:12px;">
+        <summary>存档 / 读档</summary>
+        <div class="small">系统会自动存档；你也可以手动存档多份。</div>
+        <label>存档名称</label>
+        <input id="save-name-game" placeholder="例如：E03-关键转折" />
+        <div class="stack" style="margin-top:10px;">
+          <button id="game-save-btn">存档</button>
+        </div>
+        <label style="margin-top:10px;">读取手动存档</label>
+        <select id="save-select-game"></select>
+        <div class="stack" style="margin-top:10px;">
+          <button id="game-load-save-btn" class="btn-ghost">读档</button>
+          <button id="game-delete-save-btn" class="btn-ghost">删除</button>
+        </div>
+        <div class="small" id="game-save-tip" style="margin-top:8px;"></div>
+      </details>
     </div>
   </section>
 
@@ -322,6 +370,8 @@
         <button id="jump-btn">跳转到选中事件</button>
         <button id="next-event-btn" class="btn-ghost">推进主线</button>
       </div>
+      <div id="quick-choices" class="stack" style="margin-top:10px;"></div>
+      <div class="small" id="quick-choices-tip" style="margin-top:6px; display:none;">点击快捷选项会自动填入指令（也可直接手打）。</div>
       <div class="small" style="margin-top:6px;">每次请求会附带时间线摘要提醒模型；可通过“重新生成”刷新当前场景；保持角色特征，比如師爺蘇的口吃、鄧伯的肥胖、阿樂的陰险等。</div>
     </div>
   </section>
@@ -405,6 +455,37 @@ let playerCharacter = null; // 锁定后的角色设定（游戏中只读）
 let playerState = null; // { status:{hp,stress,heat,respect,cash}, mind, task }
 const logEl = document.getElementById("log");
 const timelineEl = document.getElementById("timeline");
+const MAX_LOG_ENTRIES = 250;
+let logEntries = [];
+
+let headerBaseText = "";
+let headerBusyText = "";
+
+function updateHeaderStatus() {
+  const statusEl = document.getElementById("header-status");
+  if (!statusEl) return;
+  const base = (headerBaseText || "").trim();
+  const busy = (headerBusyText || "").trim();
+  statusEl.textContent = (busy ? `${base} · ${busy}` : base) || "就绪";
+}
+
+function setBusy(busy, label) {
+  headerBusyText = busy ? String(label || "请求中...") : "";
+  updateHeaderStatus();
+
+  const disabled = !!busy;
+  const ids = ["send-btn", "regenerate-btn", "next-event-btn", "jump-btn", "restart-game-btn", "game-save-btn"];
+  ids.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.disabled = disabled;
+  });
+  const input = document.getElementById("player-input");
+  if (input) input.disabled = disabled;
+}
+
+const SAVE_INDEX_KEY = "triad-save-index";
+const SAVE_PREFIX = "triad-save:";
+const AUTOSAVE_KEY = "triad-autosave";
 
 function clampInt(n, min, max) {
   const num = Number.isFinite(Number(n)) ? Number(n) : min;
@@ -518,13 +599,77 @@ function renderTimeline() {
 }
 
 function appendLog(text, evId = currentEvent, tag = "剧情") {
+  const rawText = String(text ?? "");
   const formatText = (t) => escapeHtml(String(t ?? "")).replace(/\n/g, "<br/>");
   const wrap = document.createElement("div");
   wrap.className = "log-entry";
   const tagEl = `<span class="event-tag">${tag}</span><span class="small">${evId}</span>`;
-  wrap.innerHTML = `${tagEl} <span class="log-text">${formatText(text)}</span>`;
+  wrap.innerHTML = `${tagEl} <span class="log-text">${formatText(rawText)}</span>`;
   logEl.appendChild(wrap);
   logEl.scrollTop = logEl.scrollHeight;
+
+  logEntries.push({ evId, tag, text: rawText, ts: Date.now() });
+  if (logEntries.length > MAX_LOG_ENTRIES) logEntries = logEntries.slice(-MAX_LOG_ENTRIES);
+}
+
+function extractChoicesFromText(text) {
+  const raw = String(text || "");
+  if (!raw.trim()) return [];
+
+  const anchor = raw.lastIndexOf("【可选行动】");
+  const block = anchor >= 0 ? raw.slice(anchor) : raw;
+  const lines = block.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+
+  const choices = [];
+  for (const line of lines) {
+    const m = line.match(/^(?:\d+)\s*[\.、\)）]\s*(.+)$/);
+    if (m && m[1]) {
+      const c = m[1].trim();
+      if (c) choices.push(c);
+    }
+  }
+  if (choices.length) return choices.slice(0, 6);
+
+  for (const line of lines) {
+    const m = line.match(/^(?:[-•])\s*(.+)$/);
+    if (m && m[1]) {
+      const c = m[1].trim();
+      if (c) choices.push(c);
+    }
+  }
+  return choices.slice(0, 6);
+}
+
+function renderQuickChoicesFromText(text) {
+  const wrap = document.getElementById("quick-choices");
+  const tip = document.getElementById("quick-choices-tip");
+  if (!wrap) return;
+
+  wrap.innerHTML = "";
+  const choices = extractChoicesFromText(text);
+  if (!choices.length) {
+    if (tip) tip.style.display = "none";
+    return;
+  }
+
+  choices.forEach((c, i) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "btn-ghost";
+    btn.style.whiteSpace = "normal";
+    btn.style.textAlign = "left";
+    btn.textContent = `${i + 1}. ${c}`;
+    btn.onclick = () => {
+      const input = document.getElementById("player-input");
+      if (input) {
+        input.value = c;
+        input.focus();
+      }
+    };
+    wrap.appendChild(btn);
+  });
+
+  if (tip) tip.style.display = "block";
 }
 
 function buildSystemPrompt() {
@@ -537,6 +682,7 @@ function buildSystemPrompt() {
     "不要输出你的推理过程/思维链，只写结果。",
     "输出必须是严格 JSON（不要代码块，不要额外文本）。格式：{ \"story\": \"...\", \"state\": { \"status\": { \"hp\":0-100, \"stress\":0-100, \"heat\":0-100, \"respect\":0-100, \"cash\":整数 }, \"mind\": \"...\", \"task\": \"...\" } }。",
     "state 必须每次给出完整数值（不要只给变化量）。",
+    "story 末尾必须追加【可选行动】并给出 3-5 条编号选项（1)2)3)...），每条都是可直接当作玩家行动指令的短句，且必须与当前事件强相关、会影响后续。",
     `当前事件：${ev.id} - ${ev.title} - ${ev.focus}。摘要：${ev.summary}`,
     `全局时间线：${recap}。`,
     "玩家是自定义的新角色，与主线交织，但需尊重主线走向。",
@@ -585,6 +731,13 @@ function extractTextFromCompletionJson(data) {
         .filter(Boolean);
       if (parts.length) return parts.join("");
     }
+    if (content && typeof content === "object") {
+      if (typeof content?.text === "string" && content.text.trim()) return content.text;
+      if (typeof content?.content === "string" && content.content.trim()) return content.content;
+      if (typeof content?.story === "string" || typeof content?.name === "string") {
+        try { return JSON.stringify(content); } catch {}
+      }
+    }
 
     const delta = first?.delta;
     const dContent = delta?.content;
@@ -594,6 +747,13 @@ function extractTextFromCompletionJson(data) {
         .map(p => (typeof p?.text === "string" ? p.text : (typeof p?.content === "string" ? p.content : "")))
         .filter(Boolean);
       if (parts.length) return parts.join("");
+    }
+    if (dContent && typeof dContent === "object") {
+      if (typeof dContent?.text === "string" && dContent.text.trim()) return dContent.text;
+      if (typeof dContent?.content === "string" && dContent.content.trim()) return dContent.content;
+      if (typeof dContent?.story === "string" || typeof dContent?.name === "string") {
+        try { return JSON.stringify(dContent); } catch {}
+      }
     }
 
     if (typeof first?.content === "string" && first.content.trim()) return first.content;
@@ -619,7 +779,21 @@ function extractTextFromCompletionJson(data) {
   }
 
   const msg = data?.message;
-  if (typeof msg?.content === "string" && msg.content.trim()) return msg.content;
+  const msgContent = msg?.content;
+  if (typeof msgContent === "string" && msgContent.trim()) return msgContent;
+  if (Array.isArray(msgContent)) {
+    const parts = msgContent
+      .map(p => (typeof p?.text === "string" ? p.text : (typeof p?.content === "string" ? p.content : "")))
+      .filter(Boolean);
+    if (parts.length) return parts.join("");
+  }
+  if (msgContent && typeof msgContent === "object") {
+    if (typeof msgContent?.text === "string" && msgContent.text.trim()) return msgContent.text;
+    if (typeof msgContent?.content === "string" && msgContent.content.trim()) return msgContent.content;
+    if (typeof msgContent?.story === "string" || typeof msgContent?.name === "string") {
+      try { return JSON.stringify(msgContent); } catch {}
+    }
+  }
 
   const candidates = Array.isArray(data?.candidates) ? data.candidates : null;
   const cand = candidates && candidates.length ? candidates[0] : null;
@@ -664,13 +838,99 @@ function extractTextFromChunkedLines(raw) {
   return acc.trim() ? acc : null;
 }
 
+function looksLikeTurnJson(obj) {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return false;
+  const hasStory = typeof obj.story === "string" || typeof obj.text === "string" || typeof obj.narrative === "string";
+  const hasState = (obj.state && typeof obj.state === "object") || (obj.status && typeof obj.status === "object");
+  return !!(hasStory && hasState);
+}
+
+function looksLikeCharacterJson(obj) {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return false;
+  return typeof obj.name === "string" && typeof obj.background === "string";
+}
+
+function safeJsonStringify(obj) {
+  try { return JSON.stringify(obj); } catch { return ""; }
+}
+
+function previewRawResponse(raw, maxLen = 600) {
+  const s = String(raw || "").replace(/\s+/g, " ").trim();
+  if (!s) return "";
+  return s.length > maxLen ? s.slice(0, maxLen) + "…" : s;
+}
+
+function extractBestStringFromJson(root) {
+  if (root == null) return null;
+  const seen = new Set();
+  const stack = [{ value: root, path: [] }];
+  const candidates = [];
+  const MAX_NODES = 6000;
+  let nodes = 0;
+
+  while (stack.length) {
+    const { value, path } = stack.pop();
+    nodes++;
+    if (nodes > MAX_NODES) break;
+
+    if (typeof value === "string") {
+      const t = value.trim();
+      if (t) candidates.push({ text: t, path });
+      continue;
+    }
+    if (!value || typeof value !== "object") continue;
+    if (seen.has(value)) continue;
+    seen.add(value);
+
+    if (Array.isArray(value)) {
+      for (let i = value.length - 1; i >= 0; i--) {
+        stack.push({ value: value[i], path: path.concat(i) });
+      }
+    } else {
+      const keys = Object.keys(value);
+      for (let i = keys.length - 1; i >= 0; i--) {
+        const k = keys[i];
+        stack.push({ value: value[k], path: path.concat(k) });
+      }
+    }
+  }
+
+  if (!candidates.length) return null;
+
+  const score = (c) => {
+    let sc = Math.min(c.text.length, 5000);
+    const p = c.path.map(x => String(x)).join(".").toLowerCase();
+    const prefer = [
+      "choices", "candidate", "candidates", "message", "assistant", "delta",
+      "content", "text", "output_text", "output", "story", "narrative",
+      "completion", "answer", "result", "data", "parts"
+    ];
+    const avoid = [
+      "prompt", "system", "messages", "input", "request", "headers",
+      "authorization", "api_key", "usage", "token", "id", "model",
+      "created", "object", "error", "type"
+    ];
+    for (const w of prefer) if (p.includes(w)) sc += 200;
+    for (const w of avoid) if (p.includes(w)) sc -= 200;
+    if (/^[{[]/.test(c.text) && /[}\\]]$/.test(c.text)) sc += 120;
+    if (c.text.length < 30) sc -= 180;
+    return sc;
+  };
+
+  candidates.sort((a, b) => score(b) - score(a));
+  return candidates[0];
+}
+
 function decodeModelText(raw) {
   const rawText = String(raw || "");
   let data = null;
   try { data = JSON.parse(rawText); } catch {}
   if (data) {
-    const text = extractTextFromCompletionJson(data);
-    if (text) return { text, data };
+    const extracted = String(extractTextFromCompletionJson(data) || "").trim();
+    if (extracted) return { text: extracted, data };
+    if (looksLikeTurnJson(data) || looksLikeCharacterJson(data)) return { text: rawText.trim(), data, direct: true };
+    const best = extractBestStringFromJson(data);
+    if (best && best.text) return { text: best.text, data, bestPath: best.path };
     return { text: "", data };
   }
   const streamed = extractTextFromChunkedLines(rawText);
@@ -707,25 +967,58 @@ function offlineTurn(cmd) {
   const ev = timeline.find(t => t.id === currentEvent) || timeline[0];
   const c = playerCharacter || getCharacterFromInputs();
   const base = playerState ? JSON.parse(JSON.stringify(playerState)) : defaultPlayerState();
+  const cleanCmd = String(cmd || "").trim();
+  const isStart = /^(开始|开局|进入|进入游戏|开始游戏|继续)$/i.test(cleanCmd);
 
   const s = base.status || (base.status = { hp: 100, stress: 20, heat: 10, respect: 15, cash: 8000 });
   const hit = (re) => re.test(cmd);
   const add = (k, d) => { s[k] = clampInt((Number(s[k]) || 0) + d, 0, 100); };
 
-  if (hit(/动手|揍|砍|打|威胁|勒索|掀桌|开片/)) { add("heat", 12); add("stress", 8); add("respect", 6); add("hp", -6); }
-  else if (hit(/谈|谈判|请|送礼|买通|塞钱|疏通/)) { add("heat", 3); add("stress", 3); add("respect", 2); s.cash = Math.max(0, (Number(s.cash) || 0) - 500); }
-  else if (hit(/跟踪|尾随|偷听|探|盯梢/)) { add("heat", 5); add("stress", 2); }
-  else if (hit(/休息|撤|躲|避|观望/)) { add("stress", -4); add("heat", -2); add("hp", 2); }
-  else { add("stress", 1); }
+  if (!isStart) {
+    if (hit(/动手|揍|砍|打|威胁|勒索|掀桌|开片/)) { add("heat", 12); add("stress", 8); add("respect", 6); add("hp", -6); }
+    else if (hit(/谈|谈判|请|送礼|买通|塞钱|疏通/)) { add("heat", 3); add("stress", 3); add("respect", 2); s.cash = Math.max(0, (Number(s.cash) || 0) - 500); }
+    else if (hit(/跟踪|尾随|偷听|探|盯梢/)) { add("heat", 5); add("stress", 2); }
+    else if (hit(/休息|撤|躲|避|观望/)) { add("stress", -4); add("heat", -2); add("hp", 2); }
+    else { add("stress", 1); }
+  }
 
   if (s.stress >= 75) base.mind = "心里发紧，明明站在灯下却像在阴影里，怕一句话就露底。";
   else if (s.heat >= 65) base.mind = "风声越来越紧，你开始怀疑每一通电话、每一次眼神停留。";
   else base.mind = base.mind || defaultPlayerState().mind;
 
-  base.task = `围绕「${ev.title}」：${ev.focus}。把「${cmd}」变成筹码，同时别让自己成替死鬼。`;
+  base.task = isStart
+    ? `开局目标（${ev.id}）：先摸清风向（阿樂/大D/叔父/O记），找一条能安全落脚的路。`
+    : `围绕「${ev.title}」：${ev.focus}。把「${cmd}」变成筹码，同时别让自己成替死鬼。`;
 
-  const filler = `（离线叙事模拟）你叫「${c.name}」，${c.gender}，${c.age}岁。${ev.title}阶段，九龙的潮湿空气裹着柴油味，你的鞋底黏在地砖上。你做了「${cmd}」，这动作看似小，却像往水里丢了一颗石子：涟漪先碰到外围马仔，再碰到叔父耳边。`;
-  const longDesc = `${filler}\n街口有人低声提“和聯勝两年一选”，说阿樂在佐敦那边笑得斯文，眼神却像算盘珠子一粒粒拨；荃湾的大D则把钱当拳头用，讲话粗得像砂纸，情绪一上来就要人跪。你绕过茶楼后门，听见有人提到師爺蘇——他结巴着说“规、规矩…先…先放着”，却把每条线都记得清清楚楚；鄧伯坐着喘气，胖得像压住整张桌子，可一句“平衡”就能让人闭嘴。O记的影子也在，你不知道许Sir是不是已经盯住你。\n你现在最清楚的是：你不是主角，但你会被主线碾过去。你若靠近阿樂，可能卷进更深的暗流；你若贴着大D，可能被他的火气带去撞墙。你回头看一眼自己给自己编的底色：${c.background}——那不是履历，是你给自己找的借口。\n街灯闪了一下，像提醒你：今晚不必见血也会留痕。你得决定下一步要拿谁的消息、谁的承诺、谁的把柄，换你在这个节点里活下去的资格。`;
+  const filler = `（离线叙事模拟）你叫「${c.name}」，${c.gender}，${c.age}岁。${ev.title}阶段，九龙的潮湿空气裹着柴油味，你的鞋底黏在地砖上。${isStart ? "你第一次真正把脚踩进这个局。" : `你做了「${cmd}」，这动作看似小，却像往水里丢了一颗石子：涟漪先碰到外围马仔，再碰到叔父耳边。`}`;
+  const optionsByEvent = {
+    E01: [
+      "去佐敦茶楼坐角落，听叔父们聊阿樂与大D的拉票风声",
+      "去荃湾仓库见大D的人，试探他们开价要你做什么",
+      "尾随一个跑腿马仔，摸清四眼明/龙头棍的消息从哪儿来",
+      "打电话给師爺蘇，让他“按规矩”给你指条安全的路"
+    ],
+    E02: [
+      "混进叔父会议外圈偷听，记下谁在给阿樂说话",
+      "替某个叔父送礼探口风，换一条靠山线",
+      "去荃湾找大D，看看他会不会当场翻脸",
+      "去佐敦找阿樂，试探他愿不愿意收你做外围"
+    ],
+    E03: [
+      "去医院外蹲点，打听吹鸡伤势与O记动向",
+      "跟住四眼明的线去找车路，查龙头棍去向",
+      "去找龙根叔的人，问清Jimmy仔会不会插手",
+      "远离火拼现场，先把自己从名单里抹掉"
+    ]
+  };
+  const opts = optionsByEvent[ev.id] || [
+    `围绕「${ev.title}」先打听两边风声（阿樂/大D）`,
+    "找師爺蘇问规矩与路数",
+    "盯住一个关键跑腿，跟出消息源头"
+  ];
+  const optionsBlock = `\n\n【可选行动】\n${opts.slice(0, 5).map((o, i) => `${i + 1}) ${o}`).join("\n")}`;
+
+  const longDesc = `${filler}\n街口有人低声提“和聯勝两年一选”，说阿樂在佐敦那边笑得斯文，眼神却像算盘珠子一粒粒拨；荃湾的大D则把钱当拳头用，讲话粗得像砂纸，情绪一上来就要人跪。你绕过茶楼后门，听见有人提到師爺蘇——他结巴着说“规、规矩…先…先放着”，却把每条线都记得清清楚楚；鄧伯坐着喘气，胖得像压住整张桌子，可一句“平衡”就能让人闭嘴。O记的影子也在，你不知道许Sir是不是已经盯住你。\n你现在最清楚的是：你不是主角，但你会被主线碾过去。你若靠近阿樂，可能卷进更深的暗流；你若贴着大D，可能被他的火气带去撞墙。你回头看一眼自己给自己编的底色：${c.background}——那不是履历，是你给自己找的借口。\n街灯闪了一下，像提醒你：今晚不必见血也会留痕。你得决定下一步要拿谁的消息、谁的承诺、谁的把柄，换你在这个节点里活下去的资格。${optionsBlock}`;
 
   return { story: longDesc, state: base };
 }
@@ -741,9 +1034,10 @@ async function sendToModel(cmd, isRegen=false) {
     const out = offlineTurn(cmd);
     applyStateUpdate(out.state);
     appendLog(out.story, currentEvent, isRegen ? "重新生成(离线)" : "剧情(离线)");
+    renderQuickChoicesFromText(out.story);
+    autoSave(isRegen ? "regen" : "turn");
     return;
   }
-  appendLog("向模型请求中...", currentEvent, isRegen ? "重新生成" : "请求");
   const payload = {
     model,
     messages: [
@@ -755,6 +1049,7 @@ async function sendToModel(cmd, isRegen=false) {
     stream: false
   };
   try {
+    setBusy(true, isRegen ? "重新生成中..." : "请求中...");
     const res = await fetch(base + "/chat/completions", {
       method: "POST",
       headers: {
@@ -771,18 +1066,31 @@ async function sendToModel(cmd, isRegen=false) {
       throw new Error(`${res.status} ${res.statusText}: ${msg}`.trim());
     }
     const decoded = decodeModelText(raw);
-    const text = (decoded?.text || "").trim();
-    if (!text) throw new Error("模型返回空内容（可能是服务端默认 stream=true 或返回结构不兼容）");
+    let text = (decoded?.text || "").trim();
+    if (!text && decoded?.data) {
+      const best = extractBestStringFromJson(decoded.data);
+      if (best && best.text) text = best.text.trim();
+    }
+    if (!text) {
+      const preview = previewRawResponse(raw);
+      throw new Error("模型返回空内容（可能是服务端默认 stream=true 或返回结构不兼容）" + (preview ? "；原始返回预览：" + preview : ""));
+    }
 
     const obj = tryParseJsonResponse(text);
     const story = (obj && typeof obj === "object") ? String(obj.story || obj.text || obj.narrative || "").trim() : "";
     if (obj && typeof obj === "object") applyStateUpdate(obj.state || obj);
     appendLog(story || text, currentEvent, isRegen ? "重新生成" : "剧情");
+    renderQuickChoicesFromText(story || text);
+    autoSave(isRegen ? "regen" : "turn");
   } catch (err) {
     appendLog("请求失败，已切换离线叙事模拟。错误：" + err.message + "（若为 CORS/Failed to fetch：该 API 不允许浏览器直连，需使用支持 CORS 的网关/后端）", currentEvent, "错误");
     const out = offlineTurn(cmd);
     applyStateUpdate(out.state);
     appendLog(out.story, currentEvent, isRegen ? "重新生成(离线)" : "剧情(离线)");
+    renderQuickChoicesFromText(out.story);
+    autoSave(isRegen ? "regen" : "turn");
+  } finally {
+    setBusy(false);
   }
 }
 
@@ -825,24 +1133,234 @@ function sanitizeApiBase(raw) {
   return resolveV1Base(base);
 }
 
+function safeJsonParse(str, fallback) {
+  try { return JSON.parse(str); } catch { return fallback; }
+}
+
+function formatSaveTime(ts) {
+  const d = new Date(ts || Date.now());
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function getSaveIndex() {
+  const idx = safeJsonParse(localStorage.getItem(SAVE_INDEX_KEY) || "[]", []);
+  return Array.isArray(idx) ? idx : [];
+}
+
+function setSaveIndex(index) {
+  const arr = Array.isArray(index) ? index : [];
+  localStorage.setItem(SAVE_INDEX_KEY, JSON.stringify(arr));
+}
+
+function createSaveId() {
+  return "S" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function applyCharacterToInputs(c) {
+  if (!c) return;
+  if (document.getElementById("char-name")) document.getElementById("char-name").value = String(c.name || "").trim();
+  if (document.getElementById("char-gender")) document.getElementById("char-gender").value = String(c.gender || "男").trim();
+  if (document.getElementById("char-age")) document.getElementById("char-age").value = String(c.age || "").trim();
+  if (document.getElementById("char-look")) document.getElementById("char-look").value = String(c.look || "").trim();
+  if (document.getElementById("char-bg")) document.getElementById("char-bg").value = String(c.background || "").trim();
+}
+
+function buildSaveData(saveMode = mode) {
+  const c = playerCharacter || getCharacterFromInputs();
+  const state = playerState || defaultPlayerState();
+  return {
+    version: 1,
+    mode: saveMode,
+    savedAt: Date.now(),
+    currentEvent,
+    selectedEvent,
+    visitedEvents: Array.from(visitedEvents),
+    lastPrompt,
+    character: c,
+    playerState: state,
+    logEntries: (Array.isArray(logEntries) ? logEntries : []).slice(-MAX_LOG_ENTRIES).map(e => ({
+      evId: e?.evId || currentEvent,
+      tag: e?.tag || "剧情",
+      text: String(e?.text ?? "")
+    }))
+  };
+}
+
+function setSaveTip(where, msg) {
+  const id =
+    where === "home" ? "home-save-tip" :
+    where === "creator" ? "creator-save-tip" :
+    where === "game" ? "game-save-tip" :
+    null;
+  const el = id ? document.getElementById(id) : null;
+  if (el) el.textContent = msg || "";
+}
+
+function refreshSaveSelects() {
+  const saves = getSaveIndex().sort((a, b) => (b?.ts || 0) - (a?.ts || 0));
+
+  const fill = (selectId) => {
+    const el = document.getElementById(selectId);
+    if (!el) return;
+    el.innerHTML = "";
+    if (!saves.length) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "（暂无手动存档）";
+      el.appendChild(opt);
+      return;
+    }
+    saves.forEach(s => {
+      const opt = document.createElement("option");
+      opt.value = String(s.id || "");
+      opt.textContent = `${s.name || s.id || "未命名"} · ${formatSaveTime(s.ts)}`;
+      el.appendChild(opt);
+    });
+  };
+
+  fill("save-select-home");
+  fill("save-select-creator");
+  fill("save-select-game");
+
+  const hasAuto = !!localStorage.getItem(AUTOSAVE_KEY);
+  const contBtn = document.getElementById("home-continue-btn");
+  if (contBtn) contBtn.disabled = !hasAuto;
+}
+
+function saveManual(name, saveMode = mode) {
+  const err = validateCharacter();
+  if (err) throw new Error(err);
+
+  const c = playerCharacter || getCharacterFromInputs();
+  const defaultName = `${c.name || "无名"}-${saveMode === "game" ? currentEvent : "开局"}-${formatSaveTime(Date.now())}`;
+  const saveName = (name || "").trim() || defaultName;
+
+  const id = createSaveId();
+  const data = buildSaveData(saveMode);
+  localStorage.setItem(SAVE_PREFIX + id, JSON.stringify(data));
+
+  const idx = getSaveIndex().filter(s => s?.id !== id);
+  idx.unshift({ id, name: saveName, ts: Date.now(), mode: saveMode });
+  setSaveIndex(idx.slice(0, 30));
+
+  refreshSaveSelects();
+  return { id, name: saveName };
+}
+
+function restoreFromSaveObject(save, nextMode) {
+  if (!save || typeof save !== "object") throw new Error("存档内容损坏");
+
+  currentEvent = String(save.currentEvent || "E01");
+  selectedEvent = String(save.selectedEvent || currentEvent);
+  visitedEvents = new Set(Array.isArray(save.visitedEvents) && save.visitedEvents.length ? save.visitedEvents : [currentEvent]);
+  lastPrompt = String(save.lastPrompt || "");
+  playerState = (save.playerState && typeof save.playerState === "object") ? save.playerState : defaultPlayerState();
+
+  const c = (save.character && typeof save.character === "object") ? save.character : null;
+  applyCharacterToInputs(c);
+
+  clearLog();
+  if (Array.isArray(save.logEntries)) {
+    save.logEntries.forEach(e => {
+      appendLog(String(e?.text ?? ""), String(e?.evId || currentEvent), String(e?.tag || "剧情"));
+    });
+  }
+
+  if (nextMode === "game") {
+    playerCharacter = c || getCharacterFromInputs();
+    setMode("game");
+    renderTimeline();
+    renderPlayerPanel();
+    if (!logEntries.length) {
+      const inputEl = document.getElementById("player-input");
+      if (inputEl) inputEl.value = "";
+      sendToModel(currentEvent === "E01" ? "开始" : "继续");
+    }
+  } else {
+    playerCharacter = null;
+    setMode("creator");
+    renderTemplates();
+    setCreatorMode(creatorMode);
+    renderTimeline();
+    renderPlayerPanel();
+  }
+}
+
+function loadManual(id, targetMode = "auto") {
+  const sid = String(id || "").trim();
+  if (!sid) throw new Error("请选择一个存档");
+  const raw = localStorage.getItem(SAVE_PREFIX + sid);
+  if (!raw) throw new Error("存档不存在或已被删除");
+  const save = safeJsonParse(raw, null);
+  if (!save || typeof save !== "object") throw new Error("存档内容损坏");
+
+  const saveMode = save.mode === "game" ? "game" : "creator";
+  const nextMode = targetMode === "auto" ? saveMode : (targetMode === "game" ? "game" : "creator");
+
+  restoreFromSaveObject(save, nextMode);
+  if (nextMode === "game") autoSave("load");
+
+  refreshSaveSelects();
+  return save;
+}
+
+function loadAutoSave() {
+  const raw = localStorage.getItem(AUTOSAVE_KEY);
+  if (!raw) throw new Error("暂无自动存档");
+  const save = safeJsonParse(raw, null);
+  if (!save || typeof save !== "object") throw new Error("自动存档损坏");
+  restoreFromSaveObject(save, "game");
+  refreshSaveSelects();
+  return save;
+}
+
+function autoSave(reason = "auto") {
+  if (mode !== "game") return;
+  const data = buildSaveData("game");
+  data.reason = String(reason || "auto");
+  localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(data));
+  refreshSaveSelects();
+}
+
+function deleteManual(id) {
+  const sid = String(id || "").trim();
+  if (!sid) throw new Error("请选择一个存档");
+  localStorage.removeItem(SAVE_PREFIX + sid);
+  const idx = getSaveIndex().filter(s => s?.id !== sid);
+  setSaveIndex(idx);
+  refreshSaveSelects();
+}
+
+function clearAllSaves() {
+  const idx = getSaveIndex();
+  idx.forEach(s => {
+    const sid = String(s?.id || "").trim();
+    if (sid) localStorage.removeItem(SAVE_PREFIX + sid);
+  });
+  localStorage.removeItem(SAVE_INDEX_KEY);
+  localStorage.removeItem(AUTOSAVE_KEY);
+  refreshSaveSelects();
+}
+
 function setMode(nextMode) {
   mode = nextMode;
   document.body.classList.remove("mode-home", "mode-creator", "mode-game");
   document.body.classList.add(`mode-${nextMode}`);
-  const statusEl = document.getElementById("header-status");
-  if (statusEl) {
-    if (nextMode === "home") statusEl.textContent = "主界面";
-    else if (nextMode === "creator") statusEl.textContent = "角色创建";
-    else {
-      const ev = timeline.find(t => t.id === currentEvent);
-      statusEl.textContent = ev ? `游戏中 · ${ev.id} ${ev.title}` : "游戏中";
-    }
+  if (nextMode === "home") headerBaseText = "主界面";
+  else if (nextMode === "creator") headerBaseText = "角色创建";
+  else {
+    const ev = timeline.find(t => t.id === currentEvent);
+    headerBaseText = ev ? `游戏中 · ${ev.id} ${ev.title}` : "游戏中";
   }
+  updateHeaderStatus();
   renderPlayerPanel();
 }
 
 function clearLog() {
   logEl.innerHTML = "";
+  logEntries = [];
+  renderQuickChoicesFromText("");
 }
 
 function resetProgress() {
@@ -1071,7 +1589,11 @@ async function generateCustomCharacter() {
       throw new Error(`${res.status} ${res.statusText}: ${msg}`.trim());
     }
     const decoded = decodeModelText(raw);
-    const text = (decoded?.text || "").trim();
+    let text = (decoded?.text || "").trim();
+    if (!text && decoded?.data) {
+      const best = extractBestStringFromJson(decoded.data);
+      if (best && best.text) text = best.text.trim();
+    }
     const obj = extractJsonObject(text);
     if (!obj || !obj.name || !obj.background) throw new Error("返回不是可解析的 JSON");
 
@@ -1158,7 +1680,11 @@ async function generateCharacter() {
       throw new Error(`${res.status} ${res.statusText}: ${msg}`.trim());
     }
     const decoded = decodeModelText(raw);
-    const text = (decoded?.text || "").trim();
+    let text = (decoded?.text || "").trim();
+    if (!text && decoded?.data) {
+      const best = extractBestStringFromJson(decoded.data);
+      if (best && best.text) text = best.text.trim();
+    }
     const obj = extractJsonObject(text);
     if (!obj || !obj.name || !obj.background) throw new Error("返回不是可解析的 JSON");
 
@@ -1240,12 +1766,19 @@ function enterGame() {
     resetProgress();
     lastPrompt = "";
     clearLog();
-    appendLog("开局已就绪：你从“选举前夕”切入。输入你的第一条行动指令，故事将按主线推进，但细节将因你而变。", currentEvent, "系统");
   }
 
   setMode("game");
   renderTimeline();
   renderPlayerPanel();
+  autoSave("enter");
+
+  // 开局自动生成一段“开场白 + 可选行动”，不再用固定提示语。
+  if (!logEntries.length) {
+    const inputEl = document.getElementById("player-input");
+    if (inputEl) inputEl.value = "";
+    sendToModel("开始");
+  }
 }
 
 function advanceEvent() {
@@ -1265,6 +1798,7 @@ function advanceEvent() {
   }
   renderPlayerPanel();
   appendLog(`你将主线推进到「${next.title}」。旧账开始要还，新局也开始成形。`, currentEvent, "主线");
+  autoSave("advance");
 }
 
 document.getElementById("send-btn").onclick = () => {
@@ -1297,6 +1831,7 @@ document.getElementById("jump-btn").onclick = () => {
   }
   renderPlayerPanel();
   appendLog(`你跳转回到「${ev?.title || currentEvent}」，准备从此处改写细节。`, currentEvent, "跳转");
+  autoSave("jump");
 };
 
 document.getElementById("next-event-btn").onclick = () => {
@@ -1359,6 +1894,44 @@ document.getElementById("load-models-btn").onclick = () => {
   loadModels();
 };
 
+document.getElementById("home-continue-btn").onclick = () => {
+  try {
+    loadAutoSave();
+    setSaveTip("home", "已继续上次。");
+  } catch (e) {
+    setSaveTip("home", "继续失败：" + (e?.message || e));
+  }
+};
+
+document.getElementById("home-load-save-btn").onclick = () => {
+  try {
+    const id = document.getElementById("save-select-home")?.value;
+    loadManual(id, "auto");
+    setSaveTip("home", "已读档。");
+  } catch (e) {
+    setSaveTip("home", "读档失败：" + (e?.message || e));
+  }
+};
+
+document.getElementById("home-delete-save-btn").onclick = () => {
+  try {
+    const id = document.getElementById("save-select-home")?.value;
+    deleteManual(id);
+    setSaveTip("home", "已删除存档。");
+  } catch (e) {
+    setSaveTip("home", "删除失败：" + (e?.message || e));
+  }
+};
+
+document.getElementById("home-clear-saves-btn").onclick = () => {
+  try {
+    clearAllSaves();
+    setSaveTip("home", "已清空全部手动存档与自动存档。");
+  } catch (e) {
+    setSaveTip("home", "清空失败：" + (e?.message || e));
+  }
+};
+
 document.getElementById("edit-character-btn").onclick = () => {
   renderTemplates();
   setMode("creator");
@@ -1374,6 +1947,67 @@ document.getElementById("restart-game-btn").onclick = () => {
   clearLog();
   setMode("game");
   appendLog("已重新开局，回到选举前夕。你的旧选择被清空，但你的性格与背景仍会影响你下一步。", currentEvent, "系统");
+  autoSave("restart");
+};
+
+document.getElementById("creator-save-btn").onclick = () => {
+  try {
+    const name = document.getElementById("save-name-creator")?.value || "";
+    const saved = saveManual(name, "creator");
+    setSaveTip("creator", `已存档：${saved.name}`);
+  } catch (e) {
+    setSaveTip("creator", "存档失败：" + (e?.message || e));
+  }
+};
+
+document.getElementById("creator-load-save-btn").onclick = () => {
+  try {
+    const id = document.getElementById("save-select-creator")?.value;
+    loadManual(id, "auto");
+    setSaveTip("creator", "已读档。");
+  } catch (e) {
+    setSaveTip("creator", "读档失败：" + (e?.message || e));
+  }
+};
+
+document.getElementById("creator-delete-save-btn").onclick = () => {
+  try {
+    const id = document.getElementById("save-select-creator")?.value;
+    deleteManual(id);
+    setSaveTip("creator", "已删除存档。");
+  } catch (e) {
+    setSaveTip("creator", "删除失败：" + (e?.message || e));
+  }
+};
+
+document.getElementById("game-save-btn").onclick = () => {
+  try {
+    const name = document.getElementById("save-name-game")?.value || "";
+    const saved = saveManual(name, "game");
+    setSaveTip("game", `已存档：${saved.name}`);
+  } catch (e) {
+    setSaveTip("game", "存档失败：" + (e?.message || e));
+  }
+};
+
+document.getElementById("game-load-save-btn").onclick = () => {
+  try {
+    const id = document.getElementById("save-select-game")?.value;
+    loadManual(id, "auto");
+    setSaveTip("game", "已读档。");
+  } catch (e) {
+    setSaveTip("game", "读档失败：" + (e?.message || e));
+  }
+};
+
+document.getElementById("game-delete-save-btn").onclick = () => {
+  try {
+    const id = document.getElementById("save-select-game")?.value;
+    deleteManual(id);
+    setSaveTip("game", "已删除存档。");
+  } catch (e) {
+    setSaveTip("game", "删除失败：" + (e?.message || e));
+  }
 };
 
 document.getElementById("save-api").onclick = () => {
@@ -1450,6 +2084,7 @@ document.getElementById("clear-api").onclick = () => {
   renderTemplates();
   renderTimeline();
   setMode("home");
+  refreshSaveSelects();
 })();
 </script>
 </body>
