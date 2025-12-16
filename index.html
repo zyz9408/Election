@@ -121,6 +121,33 @@
   .home-card { max-width: 880px; width: 100%; }
   .home-hero { font-size: 22px; margin: 0 0 8px; letter-spacing: 0.4px; }
   .home-text { color: #d7d7e7; line-height: 1.75; font-size: 13px; }
+  details.home-settings {
+    margin-top: 14px;
+    padding: 12px;
+    border: 1px solid #252530;
+    border-radius: 10px;
+    background: rgba(18,18,24,0.55);
+  }
+  details.home-settings > summary {
+    cursor: pointer;
+    font-weight: 700;
+    color: #ffede1;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    font-size: 13px;
+    outline: none;
+    list-style: none;
+  }
+  details.home-settings > summary::-webkit-details-marker { display: none; }
+  details.home-settings[open] > summary { margin-bottom: 10px; }
+  .kv { display: grid; grid-template-columns: 76px 1fr; gap: 6px 10px; font-size: 12px; line-height: 1.6; }
+  .kv .k { color: var(--muted); }
+  .kv .v { color: var(--text); white-space: pre-wrap; word-break: break-word; }
+  .stat-row { display: grid; grid-template-columns: 76px 1fr 52px; align-items: center; gap: 10px; margin: 8px 0; }
+  .stat-row .k { color: var(--muted); font-size: 12px; }
+  .stat-row .val { text-align: right; font-variant-numeric: tabular-nums; color: #e7d7d0; font-size: 12px; }
+  .bar { height: 8px; background: #0d0d12; border: 1px solid #262631; border-radius: 999px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; background: var(--accent); width: 50%; }
 
   #creator-section { display: none; }
   #game-tools { display: none; }
@@ -143,6 +170,9 @@
   .template-card.selected { border-color: var(--accent); box-shadow: var(--glow); }
   .template-title { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
   .template-title strong { font-size: 13px; }
+  .mode-toggle { display: flex; gap: 8px; flex-wrap: wrap; }
+  .mode-toggle .tab { flex: 1 1 180px; }
+  .mode-toggle .tab.active { border-color: var(--accent); background: rgba(193,18,31,0.12); }
 </style>
 </head>
 <body class="mode-home">
@@ -171,74 +201,114 @@
       流程：主界面 → 角色模板选择/生成（可手写） → 进入游戏界面。<br/>
       提示：若浏览器直连 OpenAI/兼容 API 需后端支持 CORS；也可填自己的 OpenAI 格式代理地址。
     </div>
+
+    <details class="home-settings" open>
+      <summary>API 设置（可选）</summary>
+      <div class="small">未填写将使用本地离线叙事模拟；模型列表读取与配置会保存到浏览器本地。</div>
+      <div class="small" id="cors-tip" style="margin-top:6px;"></div>
+      <label>Base URL</label>
+      <input id="api-base" placeholder="示例：https://api.openai.com/v1 或 https://generativelanguage.googleapis.com/v1beta/openai" />
+      <div class="small" style="margin-top:6px;">注意：这里需要 OpenAI 兼容接口；Gemini 请使用 <code>.../v1beta/openai</code>，不要填 <code>.../v1beta/models</code>。</div>
+      <label>模型</label>
+      <div class="stack">
+        <input id="api-model" list="api-models" placeholder="gpt-4o-mini" style="flex: 1 1 220px;" />
+        <button id="load-models-btn" class="btn-ghost" style="white-space:nowrap;">读取模型列表</button>
+      </div>
+      <datalist id="api-models"></datalist>
+      <div class="small" id="models-tip" style="margin-top:6px;"></div>
+      <label>API Key</label>
+      <input id="api-key" type="password" placeholder="sk-..." />
+      <div class="stack" style="margin-top:10px;">
+        <button id="save-api">保存配置</button>
+        <button id="clear-api" class="btn-ghost">清空</button>
+      </div>
+      <div class="small" id="api-tip" style="margin-top:8px;"></div>
+    </details>
   </div>
 </div>
 
 <main>
   <section class="panel" id="config">
-    <h2>角色创建</h2>
+    <h2 id="config-title">角色创建</h2>
     <div id="creator-section">
-      <label>默认模板（点击选择）</label>
-      <div id="template-list" class="template-list"></div>
-      <label>自定义模板（可选）</label>
-      <textarea id="custom-template" placeholder="用一句话写你的身份与欲望，例如：我在荃湾替人看场，手上有去广州的过境车线，想趁选举捞一笔，又怕惹到阿樂。"></textarea>
-      <div class="stack" style="margin-top:10px;">
-        <button id="gen-character-btn">生成角色</button>
-        <button id="random-character-btn" class="btn-ghost">随机一份</button>
-        <button id="apply-template-btn" class="btn-ghost">套用模板</button>
+      <div class="mode-toggle" style="margin-bottom:10px;">
+        <button id="creator-mode-template" class="btn-ghost tab active" type="button">模板角色</button>
+        <button id="creator-mode-custom" class="btn-ghost tab" type="button">自定义角色</button>
       </div>
-      <div class="stack" style="margin-top:8px;">
+
+      <div id="creator-template">
+        <label>默认模板（点击选择）</label>
+        <div id="template-list" class="template-list"></div>
+        <label>模板补充（可选）</label>
+        <textarea id="template-addon" placeholder="可选：在模板基础上补充一句欲望/弱点/资源，例如：我欠了高利贷，手里有一条去广州的过境车线。"></textarea>
+        <div class="stack" style="margin-top:10px;">
+          <button id="apply-template-btn" class="btn-ghost" type="button">套用模板</button>
+          <button id="gen-character-btn" type="button">生成角色</button>
+          <button id="random-character-btn" class="btn-ghost" type="button">随机一份</button>
+        </div>
+      </div>
+
+      <div id="creator-custom" style="display:none;">
+        <label>自定义角色描述（单独生效）</label>
+        <textarea id="custom-role" placeholder="写清楚：你是谁、靠什么吃饭、有什么资源/弱点、想要什么。例如：我在佐敦茶楼跑腿，替叔父递话，也替人对账；我想趁选举把欠账抹掉，但又怕站错队。"></textarea>
+        <div class="stack" style="margin-top:10px;">
+          <button id="gen-custom-character-btn" type="button">生成角色</button>
+          <button id="random-custom-character-btn" class="btn-ghost" type="button">随机一份</button>
+          <button id="apply-custom-bg-btn" class="btn-ghost" type="button">将描述写入背景</button>
+        </div>
+        <div class="small" style="margin-top:8px;">你也可以直接在下方“角色姓名/外形/年龄/背景”里手写，不必生成。</div>
+      </div>
+      <hr style="border:none; border-top:1px solid #252530; margin:12px 0;">
+
+      <label>角色姓名</label>
+      <input id="char-name" placeholder="输入姓名，如：林道行" />
+      <label>外形</label>
+      <input id="char-look" placeholder="高瘦、疤痕、金边眼镜..." />
+      <label>年龄</label>
+      <input id="char-age" type="number" min="16" max="80" placeholder="28" />
+      <label>性别</label>
+      <select id="char-gender">
+        <option value="男">男</option>
+        <option value="女">女</option>
+        <option value="其他">其他</option>
+      </select>
+      <label>背景/身份</label>
+      <textarea id="char-bg" placeholder="例：澳门混血，会计出身，曾在十三太保做过跟单，讨厌无规矩的江湖。"></textarea>
+
+      <div class="stack" style="margin-top:10px;">
         <button id="enter-game-btn">进入游戏界面</button>
         <button id="back-home-btn" class="btn-ghost">返回主界面</button>
       </div>
       <div class="small" id="creator-tip" style="margin-top:8px;"></div>
-      <hr style="border:none; border-top:1px solid #252530; margin:12px 0;">
+      <div class="small" style="margin-top:8px;">提示：API 设置在主界面修改；进入游戏后人物设定将锁定为只读。</div>
     </div>
+
     <div id="game-tools">
-      <div class="small">你正在游戏中。需要更换角色或模板？</div>
+      <div class="small">游戏中：人物设定只读；状态/心理/任务会随剧情自动更新。</div>
       <div class="stack" style="margin-top:8px;">
         <button id="edit-character-btn" class="btn-ghost">更换角色（重新开局）</button>
         <button id="restart-game-btn" class="btn-ghost">重新开局</button>
       </div>
       <hr style="border:none; border-top:1px solid #252530; margin:12px 0;">
-    </div>
-    <label>角色姓名</label>
-    <input id="char-name" placeholder="输入姓名，如：林道行" />
-    <label>外形</label>
-    <input id="char-look" placeholder="高瘦、疤痕、金边眼镜..." />
-    <label>年龄</label>
-    <input id="char-age" type="number" min="16" max="80" placeholder="28" />
-    <label>性别</label>
-    <select id="char-gender">
-      <option value="男">男</option>
-      <option value="女">女</option>
-      <option value="其他">其他</option>
-    </select>
-    <label>背景/身份</label>
-    <textarea id="char-bg" placeholder="例：澳门混血，会计出身，曾在十三太保做过跟单，讨厌无规矩的江湖。"></textarea>
-    <div class="stack" style="margin-top:10px;">
-      <button id="regenerate-btn" class="btn-ghost" title="重新生成当前内容">重新生成上一段</button>
-    </div>
 
-    <h2 style="margin-top:18px;">API 接入</h2>
-    <div class="small" id="cors-tip" style="margin-top:6px;"></div>
-    <label>Base URL</label>
-    <input id="api-base" placeholder="示例：https://api.openai.com/v1 或 https://generativelanguage.googleapis.com/v1beta/openai" />
-    <div class="small" style="margin-top:6px;">注意：这里需要 OpenAI 兼容接口；Gemini 请使用 <code>.../v1beta/openai</code>，不要填 <code>.../v1beta/models</code>。</div>
-    <label>模型</label>
-    <div class="stack">
-      <input id="api-model" list="api-models" placeholder="gpt-4o-mini" style="flex: 1 1 220px;" />
-      <button id="load-models-btn" class="btn-ghost" style="white-space:nowrap;">读取模型列表</button>
+      <div class="small">角色档案</div>
+      <div id="player-profile" class="kv" style="margin-top:8px;"></div>
+
+      <hr style="border:none; border-top:1px solid #252530; margin:12px 0;">
+
+      <div class="small">人物状态</div>
+      <div id="player-stats" style="margin-top:8px;"></div>
+
+      <div class="small" style="margin-top:12px;">心理状态</div>
+      <div id="player-mind" class="pill" style="margin-top:6px;">—</div>
+
+      <div class="small" style="margin-top:12px;">当前任务</div>
+      <div id="player-task" class="small" style="margin-top:6px; color: var(--text); line-height: 1.6;">—</div>
+
+      <div class="stack" style="margin-top:12px;">
+        <button id="regenerate-btn" class="btn-ghost" title="重新生成当前内容">重新生成上一段</button>
+      </div>
     </div>
-    <datalist id="api-models"></datalist>
-    <div class="small" id="models-tip" style="margin-top:6px;"></div>
-    <label>API Key</label>
-    <input id="api-key" type="password" placeholder="sk-..." />
-    <div class="stack" style="margin-top:10px;">
-      <button id="save-api">保存配置</button>
-      <button id="clear-api">清空</button>
-    </div>
-    <div class="small" style="margin-top:8px;">提示：若未填 Key，将使用本地离线叙事模拟；可在右侧事件列表快速跳转。</div>
   </section>
 
   <section class="panel" id="story-panel">
@@ -265,7 +335,7 @@
 
 <div class="footer">
   <div>故事遵循《黑社会》1+2主线：选话事人前 → 龙头之争 → 奪棍 → 结义 → 杀大D → 两年后连任 → 北上 → 全面开战 → 终局</div>
-  <div>UI 公开 API 设置 · 支持网络搜索提示（可手动在提示中要求搜索）</div>
+  <div>API 设置在主界面 · 支持网络搜索提示（可手动在提示中要求搜索）</div>
 </div>
 
 <script>
@@ -330,8 +400,99 @@ let selectedEvent = "E01";
 let visitedEvents = new Set(["E01"]);
 let selectedTemplateId = templates[0]?.id || "T01";
 let lastPrompt = "";
+let creatorMode = "template"; // template | custom
+let playerCharacter = null; // 锁定后的角色设定（游戏中只读）
+let playerState = null; // { status:{hp,stress,heat,respect,cash}, mind, task }
 const logEl = document.getElementById("log");
 const timelineEl = document.getElementById("timeline");
+
+function clampInt(n, min, max) {
+  const num = Number.isFinite(Number(n)) ? Number(n) : min;
+  return Math.max(min, Math.min(max, Math.round(num)));
+}
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function getCharacterFromInputs() {
+  const name = (document.getElementById("char-name")?.value || "").trim() || "无名";
+  const look = (document.getElementById("char-look")?.value || "").trim() || "外形未设定";
+  const age = (document.getElementById("char-age")?.value || "").trim() || "未知";
+  const gender = (document.getElementById("char-gender")?.value || "").trim() || "未设";
+  const background = (document.getElementById("char-bg")?.value || "").trim() || "背景未设定";
+  return { name, look, age, gender, background };
+}
+
+function defaultPlayerState() {
+  return {
+    status: { hp: 100, stress: 20, heat: 10, respect: 15, cash: 8000 },
+    mind: "谨慎观望，先摸清风向再下注。",
+    task: "在「选举前夕」打听两边拉票与叔父态度，找出自己能安全落脚的口子。"
+  };
+}
+
+function resetPlayerState() {
+  playerState = defaultPlayerState();
+  renderPlayerPanel();
+}
+
+function lockCharacterFromInputs() {
+  playerCharacter = getCharacterFromInputs();
+  renderPlayerPanel();
+}
+
+function renderPlayerPanel() {
+  const titleEl = document.getElementById("config-title");
+  if (titleEl) titleEl.textContent = (mode === "game") ? "角色/状态" : "角色创建";
+
+  const c = playerCharacter || getCharacterFromInputs();
+  const profileEl = document.getElementById("player-profile");
+  if (profileEl) {
+    profileEl.innerHTML = `
+      <div class="k">姓名</div><div class="v">${escapeHtml(c.name)}</div>
+      <div class="k">性别</div><div class="v">${escapeHtml(c.gender)}</div>
+      <div class="k">年龄</div><div class="v">${escapeHtml(c.age)}</div>
+      <div class="k">外形</div><div class="v">${escapeHtml(c.look)}</div>
+      <div class="k">背景</div><div class="v">${escapeHtml(c.background)}</div>
+    `;
+  }
+
+  const state = playerState || defaultPlayerState();
+  const s = state.status || {};
+  const statsEl = document.getElementById("player-stats");
+  if (statsEl) {
+    const hp = clampInt(s.hp, 0, 100);
+    const stress = clampInt(s.stress, 0, 100);
+    const heat = clampInt(s.heat, 0, 100);
+    const respect = clampInt(s.respect, 0, 100);
+    const cash = Number.isFinite(Number(s.cash)) ? Number(s.cash) : 0;
+    const cashText = "HK$" + Math.round(cash).toLocaleString();
+
+    const barRow = (label, val) => {
+      const pct = clampInt(val, 0, 100);
+      return `<div class="stat-row"><div class="k">${escapeHtml(label)}</div><div class="bar"><span style="width:${pct}%"></span></div><div class="val">${pct}/100</div></div>`;
+    };
+
+    statsEl.innerHTML = [
+      barRow("体力", hp),
+      barRow("压力", stress),
+      barRow("风声", heat),
+      barRow("声望", respect),
+      `<div class="small" style="margin-top:6px;">现金：<span style="color: var(--text)">${escapeHtml(cashText)}</span></div>`
+    ].join("");
+  }
+
+  const mindEl = document.getElementById("player-mind");
+  if (mindEl) mindEl.textContent = (state.mind || "—").trim();
+  const taskEl = document.getElementById("player-task");
+  if (taskEl) taskEl.textContent = (state.task || "—").trim();
+}
 
 function renderTimeline() {
   timelineEl.innerHTML = "";
@@ -357,10 +518,11 @@ function renderTimeline() {
 }
 
 function appendLog(text, evId = currentEvent, tag = "剧情") {
+  const formatText = (t) => escapeHtml(String(t ?? "")).replace(/\n/g, "<br/>");
   const wrap = document.createElement("div");
   wrap.className = "log-entry";
   const tagEl = `<span class="event-tag">${tag}</span><span class="small">${evId}</span>`;
-  wrap.innerHTML = `${tagEl} ${text}`;
+  wrap.innerHTML = `${tagEl} <span class="log-text">${formatText(text)}</span>`;
   logEl.appendChild(wrap);
   logEl.scrollTop = logEl.scrollHeight;
 }
@@ -372,6 +534,9 @@ function buildSystemPrompt() {
     "你是一名叙事引擎，背景为杜琪峰《黑社会》1+2，按事件顺序推进，不跳过月份或年份。",
     "角色特征必须保持：師爺蘇口吃谨慎，鄧伯肥胖慈祥但有威严，阿樂阴险深城，大D暴躁财大气粗，飞機狠辣，东莞仔野心，Jimmy仔务实想洗白。",
     "每次输出 500 字以上，细节丰富但不做无关推进；每个选择影响后续。",
+    "不要输出你的推理过程/思维链，只写结果。",
+    "输出必须是严格 JSON（不要代码块，不要额外文本）。格式：{ \"story\": \"...\", \"state\": { \"status\": { \"hp\":0-100, \"stress\":0-100, \"heat\":0-100, \"respect\":0-100, \"cash\":整数 }, \"mind\": \"...\", \"task\": \"...\" } }。",
+    "state 必须每次给出完整数值（不要只给变化量）。",
     `当前事件：${ev.id} - ${ev.title} - ${ev.focus}。摘要：${ev.summary}`,
     `全局时间线：${recap}。`,
     "玩家是自定义的新角色，与主线交织，但需尊重主线走向。",
@@ -381,12 +546,74 @@ function buildSystemPrompt() {
 }
 
 function buildUserPrompt(cmd) {
-  const name = document.getElementById("char-name").value || "无名";
-  const look = document.getElementById("char-look").value || "外形未设定";
-  const age = document.getElementById("char-age").value || "未知";
-  const gender = document.getElementById("char-gender").value || "未设";
-  const bg = document.getElementById("char-bg").value || "背景未设定";
-  return `玩家角色：${name}，${gender}，${age}岁，外形：${look}，背景：${bg}。当前事件${currentEvent}。玩家行动：${cmd}`;
+  const c = playerCharacter || getCharacterFromInputs();
+  const state = playerState || defaultPlayerState();
+  const s = state.status || {};
+  const statusLine = `体力${clampInt(s.hp,0,100)}/100，压力${clampInt(s.stress,0,100)}/100，风声${clampInt(s.heat,0,100)}/100，声望${clampInt(s.respect,0,100)}/100，现金HK$${Math.round(Number(s.cash)||0).toLocaleString()}`;
+  return `玩家角色：${c.name}，${c.gender}，${c.age}岁，外形：${c.look}，背景：${c.background}。\n人物状态：${statusLine}\n心理状态：${state.mind}\n当前任务：${state.task}\n当前事件：${currentEvent}\n玩家行动：${cmd}`;
+}
+
+function tryParseJsonResponse(text) {
+  const raw = (text || "").trim();
+  if (!raw) return null;
+
+  const m = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  const candidate = (m ? m[1] : raw).trim();
+  if (candidate.startsWith("{") && candidate.endsWith("}")) {
+    try { return JSON.parse(candidate); } catch {}
+  }
+  return extractJsonObject(raw);
+}
+
+function applyStateUpdate(next) {
+  if (!next) return;
+  if (!playerState) playerState = defaultPlayerState();
+
+  const stateObj = (next && typeof next === "object" && next.state && typeof next.state === "object") ? next.state : next;
+  const statusObj =
+    (stateObj && typeof stateObj === "object" && stateObj.status && typeof stateObj.status === "object") ? stateObj.status :
+    (next && typeof next === "object" && next.status && typeof next.status === "object") ? next.status :
+    null;
+
+  if (statusObj) {
+    const s = playerState.status || (playerState.status = {});
+    if (statusObj.hp != null) s.hp = clampInt(statusObj.hp, 0, 100);
+    if (statusObj.stress != null) s.stress = clampInt(statusObj.stress, 0, 100);
+    if (statusObj.heat != null) s.heat = clampInt(statusObj.heat, 0, 100);
+    if (statusObj.respect != null) s.respect = clampInt(statusObj.respect, 0, 100);
+    if (statusObj.cash != null) s.cash = Math.max(0, Math.round(Number(statusObj.cash) || 0));
+  }
+
+  if (typeof stateObj?.mind === "string" && stateObj.mind.trim()) playerState.mind = stateObj.mind.trim();
+  if (typeof stateObj?.task === "string" && stateObj.task.trim()) playerState.task = stateObj.task.trim();
+  renderPlayerPanel();
+}
+
+function offlineTurn(cmd) {
+  const ev = timeline.find(t => t.id === currentEvent) || timeline[0];
+  const c = playerCharacter || getCharacterFromInputs();
+  const base = playerState ? JSON.parse(JSON.stringify(playerState)) : defaultPlayerState();
+
+  const s = base.status || (base.status = { hp: 100, stress: 20, heat: 10, respect: 15, cash: 8000 });
+  const hit = (re) => re.test(cmd);
+  const add = (k, d) => { s[k] = clampInt((Number(s[k]) || 0) + d, 0, 100); };
+
+  if (hit(/动手|揍|砍|打|威胁|勒索|掀桌|开片/)) { add("heat", 12); add("stress", 8); add("respect", 6); add("hp", -6); }
+  else if (hit(/谈|谈判|请|送礼|买通|塞钱|疏通/)) { add("heat", 3); add("stress", 3); add("respect", 2); s.cash = Math.max(0, (Number(s.cash) || 0) - 500); }
+  else if (hit(/跟踪|尾随|偷听|探|盯梢/)) { add("heat", 5); add("stress", 2); }
+  else if (hit(/休息|撤|躲|避|观望/)) { add("stress", -4); add("heat", -2); add("hp", 2); }
+  else { add("stress", 1); }
+
+  if (s.stress >= 75) base.mind = "心里发紧，明明站在灯下却像在阴影里，怕一句话就露底。";
+  else if (s.heat >= 65) base.mind = "风声越来越紧，你开始怀疑每一通电话、每一次眼神停留。";
+  else base.mind = base.mind || defaultPlayerState().mind;
+
+  base.task = `围绕「${ev.title}」：${ev.focus}。把「${cmd}」变成筹码，同时别让自己成替死鬼。`;
+
+  const filler = `（离线叙事模拟）你叫「${c.name}」，${c.gender}，${c.age}岁。${ev.title}阶段，九龙的潮湿空气裹着柴油味，你的鞋底黏在地砖上。你做了「${cmd}」，这动作看似小，却像往水里丢了一颗石子：涟漪先碰到外围马仔，再碰到叔父耳边。`;
+  const longDesc = `${filler}\n街口有人低声提“和聯勝两年一选”，说阿樂在佐敦那边笑得斯文，眼神却像算盘珠子一粒粒拨；荃湾的大D则把钱当拳头用，讲话粗得像砂纸，情绪一上来就要人跪。你绕过茶楼后门，听见有人提到師爺蘇——他结巴着说“规、规矩…先…先放着”，却把每条线都记得清清楚楚；鄧伯坐着喘气，胖得像压住整张桌子，可一句“平衡”就能让人闭嘴。O记的影子也在，你不知道许Sir是不是已经盯住你。\n你现在最清楚的是：你不是主角，但你会被主线碾过去。你若靠近阿樂，可能卷进更深的暗流；你若贴着大D，可能被他的火气带去撞墙。你回头看一眼自己给自己编的底色：${c.background}——那不是履历，是你给自己找的借口。\n街灯闪了一下，像提醒你：今晚不必见血也会留痕。你得决定下一步要拿谁的消息、谁的承诺、谁的把柄，换你在这个节点里活下去的资格。`;
+
+  return { story: longDesc, state: base };
 }
 
 async function sendToModel(cmd, isRegen=false) {
@@ -397,11 +624,9 @@ async function sendToModel(cmd, isRegen=false) {
   const model = document.getElementById("api-model").value.trim();
   const key = document.getElementById("api-key").value.trim();
   if (!base || !model || !key) {
-    // offline fallback
-    const ev = timeline.find(t => t.id === currentEvent);
-    const filler = `（离线叙事模拟）${ev.title}阶段，你的行动「${cmd}」触发连锁：街头风声鹤唳，叔父们窃窃私语，鄧伯皱着眉头，師爺蘇结巴地提醒你规矩。阿樂半眯眼，试探你站在哪边；大D捏着拳头，财力收买外围。你必须在权力与生存之间作选择。`;
-    const longDesc = `${filler} 你一边回想自己${bgHint()}，一边权衡——若靠近阿樂，可能卷入杀吹鸡、奪棍的暗流；若接近大D，要承受其暴躁与警司盯梢的风险。此刻路灯闪烁，老式电话亭里传来断断续续的消息，可能是四眼明关于龙头棍的坐标，也可能是 O 记约谈的信号。夜色里，九龙的潮湿空气带着柴油味，你听见远处机枪式的鞭炮声，暗示有人在给兄弟“吹鸡”。你踌躇，是否要去佐敦茶楼与阿樂密谈，还是前往荃湾仓库探大D，抑或暗中跟踪四眼明北上。记住，每一步都将影响后续：奪棍混战、结义与背叛、水塘血案、两年后连任、北上黑化、车内铁锤、山顶宿命。现在，请谨慎落子。`;
-    appendLog(longDesc, currentEvent, isRegen ? "重新生成" : "剧情");
+    const out = offlineTurn(cmd);
+    applyStateUpdate(out.state);
+    appendLog(out.story, currentEvent, isRegen ? "重新生成(离线)" : "剧情(离线)");
     return;
   }
   appendLog("向模型请求中...", currentEvent, isRegen ? "重新生成" : "请求");
@@ -431,9 +656,15 @@ async function sendToModel(cmd, isRegen=false) {
       throw new Error(`${res.status} ${res.statusText}: ${msg}`.trim());
     }
     const text = data?.choices?.[0]?.message?.content || "（无返回内容）";
-    appendLog(text, currentEvent, isRegen ? "重新生成" : "剧情");
+    const obj = tryParseJsonResponse(text);
+    const story = (obj && typeof obj === "object") ? String(obj.story || obj.text || obj.narrative || "").trim() : "";
+    if (obj && typeof obj === "object") applyStateUpdate(obj.state || obj);
+    appendLog(story || text, currentEvent, isRegen ? "重新生成" : "剧情");
   } catch (err) {
-    appendLog("请求失败，使用离线叙事模拟。错误：" + err.message + "（若为 CORS/Failed to fetch：该 API 不允许浏览器直连，需使用支持 CORS 的网关/后端）", currentEvent, "错误");
+    appendLog("请求失败，已切换离线叙事模拟。错误：" + err.message + "（若为 CORS/Failed to fetch：该 API 不允许浏览器直连，需使用支持 CORS 的网关/后端）", currentEvent, "错误");
+    const out = offlineTurn(cmd);
+    applyStateUpdate(out.state);
+    appendLog(out.story, currentEvent, isRegen ? "重新生成(离线)" : "剧情(离线)");
   }
 }
 
@@ -481,13 +712,15 @@ function setMode(nextMode) {
   document.body.classList.remove("mode-home", "mode-creator", "mode-game");
   document.body.classList.add(`mode-${nextMode}`);
   const statusEl = document.getElementById("header-status");
-  if (!statusEl) return;
-  if (nextMode === "home") statusEl.textContent = "主界面";
-  else if (nextMode === "creator") statusEl.textContent = "角色创建";
-  else {
-    const ev = timeline.find(t => t.id === currentEvent);
-    statusEl.textContent = ev ? `游戏中 · ${ev.id} ${ev.title}` : "游戏中";
+  if (statusEl) {
+    if (nextMode === "home") statusEl.textContent = "主界面";
+    else if (nextMode === "creator") statusEl.textContent = "角色创建";
+    else {
+      const ev = timeline.find(t => t.id === currentEvent);
+      statusEl.textContent = ev ? `游戏中 · ${ev.id} ${ev.title}` : "游戏中";
+    }
   }
+  renderPlayerPanel();
 }
 
 function clearLog() {
@@ -533,13 +766,34 @@ function renderTemplates() {
   });
 }
 
+function setCreatorMode(nextMode) {
+  creatorMode = nextMode === "custom" ? "custom" : "template";
+
+  const tplBtn = document.getElementById("creator-mode-template");
+  const cusBtn = document.getElementById("creator-mode-custom");
+  if (tplBtn) tplBtn.classList.toggle("active", creatorMode === "template");
+  if (cusBtn) cusBtn.classList.toggle("active", creatorMode === "custom");
+
+  const tplWrap = document.getElementById("creator-template");
+  const cusWrap = document.getElementById("creator-custom");
+  if (tplWrap) tplWrap.style.display = creatorMode === "template" ? "block" : "none";
+  if (cusWrap) cusWrap.style.display = creatorMode === "custom" ? "block" : "none";
+
+  const tipEl = document.getElementById("creator-tip");
+  if (tipEl) {
+    tipEl.textContent = creatorMode === "template"
+      ? "模板模式：选一个模板，可套用/生成/随机；也可以直接手写下方字段。"
+      : "自定义模式：你的描述将单独生效，可生成或直接手写下方字段。";
+  }
+}
+
 function getSelectedTemplate() {
   return templates.find(t => t.id === selectedTemplateId) || templates[0];
 }
 
 function applyTemplateToFields() {
   const t = getSelectedTemplate();
-  const custom = (document.getElementById("custom-template")?.value || "").trim();
+  const custom = (document.getElementById("template-addon")?.value || "").trim();
   const genderEl = document.getElementById("char-gender");
   const ageEl = document.getElementById("char-age");
   if (t.defaults.gender !== "其他") genderEl.value = t.defaults.gender;
@@ -553,7 +807,7 @@ function applyTemplateToFields() {
 
 function offlineGenerateCharacter() {
   const t = getSelectedTemplate();
-  const custom = (document.getElementById("custom-template")?.value || "").trim();
+  const custom = (document.getElementById("template-addon")?.value || "").trim();
 
   const surnames = ["林","陈","黄","张","李","梁","何","郭","邓","许","苏","冯","叶","马","罗","吴","周","郑","潘","沈","宋","邱","曾","胡","唐"];
   const given1 = ["志","浩","明","文","杰","荣","凯","东","强","成","涛","彬","辉","贤","信","义","俊","朗","新","耀","森","达","翔","铭","锐","衡","昆","庆","安"];
@@ -590,6 +844,130 @@ function offlineGenerateCharacter() {
   if (tipEl) tipEl.textContent = "已生成角色（离线）。你可以继续修改，然后进入游戏界面。";
 }
 
+function applyCustomToBackground() {
+  const custom = (document.getElementById("custom-role")?.value || "").trim();
+  const tipEl = document.getElementById("creator-tip");
+  if (!custom) {
+    if (tipEl) tipEl.textContent = "请先填写“自定义角色描述”。";
+    return;
+  }
+  const bgEl = document.getElementById("char-bg");
+  if (bgEl) bgEl.value = custom;
+  if (tipEl) tipEl.textContent = "已将自定义描述写入背景。你可以继续补充姓名/外形/年龄，或直接进入游戏。";
+}
+
+function offlineGenerateCustomCharacter() {
+  const custom = (document.getElementById("custom-role")?.value || "").trim();
+
+  const surnames = ["林","陈","黄","张","李","梁","何","郭","邓","许","苏","冯","叶","马","罗","吴","周","郑","潘","沈","宋","邱","曾","胡","唐"];
+  const given1 = ["志","浩","明","文","杰","荣","凯","东","强","成","涛","彬","辉","贤","信","义","俊","朗","新","耀","森","达","翔","铭","锐","衡","昆","庆","安"];
+  const given2 = ["豪","然","生","峰","宁","武","昌","权","远","南","德","霖","航","佑","诚","达","耀","哲","扬","礼","坤","毅"];
+  const looks = [
+    "短发干净，衣着朴素但整齐",
+    "右眉有一道浅疤，眼神不爱停留",
+    "金边眼镜，手指常搓戒指",
+    "手背有旧纹身，站姿总是偏侧",
+    "皮肤黝黑，脖子挂细链，笑得很浅"
+  ];
+  const fears = ["被点名背锅","警察盯上","兄弟出卖","叔父一句话断你路","钱没到手就先丢命"];
+  const desires = ["拿到更稳的口子","替自己找一条洗白的路","在选举里换个靠山","把欠账一次清掉","让家里人不再担心"];
+
+  const gender = pick(["男","女","其他"]);
+  const age = randInt(18, 45);
+  const name = pick(surnames) + pick(given1) + (Math.random() < 0.6 ? pick(given2) : "");
+  const look = pick(looks);
+
+  const bgParts = [
+    custom ? custom : "你在九龙的灰色边缘讨生活，懂规矩也懂变通，手里攥着一点小资源。",
+    `你最怕的是${pick(fears)}，最想要的是${pick(desires)}。`,
+    "选话事人前夕，佐敦与荃湾都在拉票，叔父们嘴上讲规矩，手上却在算账。你得把自己那点筹码换成一条活路。"
+  ];
+
+  document.getElementById("char-name").value = name;
+  document.getElementById("char-gender").value = gender;
+  document.getElementById("char-age").value = String(age);
+  document.getElementById("char-look").value = look;
+  document.getElementById("char-bg").value = bgParts.join("");
+
+  const tipEl = document.getElementById("creator-tip");
+  if (tipEl) tipEl.textContent = custom ? "已生成角色（离线·自定义）。你可以继续修改，然后进入游戏界面。" : "未填写自定义描述，已随机生成角色（离线）。你也可以切回填写后再生成。";
+}
+
+async function generateCustomCharacter() {
+  const tipEl = document.getElementById("creator-tip");
+  if (tipEl) tipEl.textContent = "生成中...";
+
+  const custom = (document.getElementById("custom-role")?.value || "").trim();
+  const base = sanitizeApiBase(document.getElementById("api-base").value);
+  const model = document.getElementById("api-model").value.trim();
+  const key = document.getElementById("api-key").value.trim();
+
+  if (!custom) {
+    offlineGenerateCustomCharacter();
+    return;
+  }
+  if (!base || !model || !key) {
+    offlineGenerateCustomCharacter();
+    return;
+  }
+
+  const sys = [
+    "你是一个角色生成器，为一款基于《黑社会 1+2》的文字冒险生成玩家角色。",
+    "只输出严格 JSON，不要代码块，不要多余文字。",
+    "字段：name, gender, age, look, background。",
+    "要求：贴合 2000s 香港语境；玩家姓名不要使用阿樂/大D/Jimmy仔/鄧伯/东莞仔/飛機/師爺蘇等主角名；",
+    "background 120-220 字；look 15-40 字；用简体中文。",
+    "角色必须能合理介入“和联胜选话事人前夕”。",
+    "用户提供的是自定义角色描述，请以其为唯一核心，不要引用任何默认模板内容。"
+  ].join("\n");
+  const user = [
+    `用户自定义角色描述：${custom}`,
+    "请生成角色 JSON。"
+  ].join("\n");
+
+  const payload = {
+    model,
+    messages: [
+      { role: "system", content: sys },
+      { role: "user", content: user }
+    ],
+    temperature: 0.9,
+    max_tokens: 380
+  };
+
+  try {
+    const res = await fetch(base + "/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${key}`
+      },
+      body: JSON.stringify(payload)
+    });
+    const raw = await res.text();
+    let data = null;
+    try { data = JSON.parse(raw); } catch { data = { raw }; }
+    if (!res.ok) {
+      const msg = data?.error?.message || data?.error || data?.message || raw || "请求失败";
+      throw new Error(`${res.status} ${res.statusText}: ${msg}`.trim());
+    }
+    const text = data?.choices?.[0]?.message?.content || "";
+    const obj = extractJsonObject(text);
+    if (!obj || !obj.name || !obj.background) throw new Error("返回不是可解析的 JSON");
+
+    document.getElementById("char-name").value = String(obj.name || "").trim();
+    document.getElementById("char-gender").value = String(obj.gender || "男").trim();
+    document.getElementById("char-age").value = String(obj.age || "").trim();
+    document.getElementById("char-look").value = String(obj.look || "").trim();
+    document.getElementById("char-bg").value = String(obj.background || "").trim();
+
+    if (tipEl) tipEl.textContent = "已生成角色（API·自定义）。你可以继续修改，然后进入游戏界面。";
+  } catch (err) {
+    if (tipEl) tipEl.textContent = "生成失败，已改用离线随机。错误：" + err.message;
+    offlineGenerateCustomCharacter();
+  }
+}
+
 function extractJsonObject(text) {
   const cleaned = (text || "").trim()
     .replace(/^```(?:json)?\s*/i, "")
@@ -616,7 +994,7 @@ async function generateCharacter() {
   }
 
   const t = getSelectedTemplate();
-  const custom = (document.getElementById("custom-template")?.value || "").trim();
+  const custom = (document.getElementById("template-addon")?.value || "").trim();
   const sys = [
     "你是一个角色生成器，为一款基于《黑社会 1+2》的文字冒险生成玩家角色。",
     "只输出严格 JSON，不要代码块，不要多余文字。",
@@ -735,6 +1113,8 @@ function enterGame() {
   }
 
   if (mode !== "game") {
+    lockCharacterFromInputs();
+    resetPlayerState();
     resetProgress();
     lastPrompt = "";
     clearLog();
@@ -743,6 +1123,7 @@ function enterGame() {
 
   setMode("game");
   renderTimeline();
+  renderPlayerPanel();
 }
 
 function advanceEvent() {
@@ -757,6 +1138,10 @@ function advanceEvent() {
   visitedEvents.add(next.id);
   renderTimeline();
   setMode("game");
+  if (playerState) {
+    playerState.task = `进入「${next.title}」：${next.focus}。先稳住自己位置，再决定下一步怎么换筹码。`;
+  }
+  renderPlayerPanel();
   appendLog(`你将主线推进到「${next.title}」。旧账开始要还，新局也开始成形。`, currentEvent, "主线");
 }
 
@@ -785,6 +1170,10 @@ document.getElementById("jump-btn").onclick = () => {
   renderTimeline();
   setMode("game");
   const ev = timeline.find(t => t.id === currentEvent);
+  if (playerState && ev) {
+    playerState.task = `回到「${ev.title}」：${ev.focus}。从这里改写细节，但别忘了旧账会追着你。`;
+  }
+  renderPlayerPanel();
   appendLog(`你跳转回到「${ev?.title || currentEvent}」，准备从此处改写细节。`, currentEvent, "跳转");
 };
 
@@ -796,8 +1185,7 @@ document.getElementById("next-event-btn").onclick = () => {
 document.getElementById("home-start-btn").onclick = () => {
   renderTemplates();
   setMode("creator");
-  const tipEl = document.getElementById("creator-tip");
-  if (tipEl) tipEl.textContent = "请选择一个模板，然后生成/随机/套用，或直接手写角色信息。";
+  setCreatorMode("template");
 };
 
 document.getElementById("home-btn").onclick = () => {
@@ -806,6 +1194,15 @@ document.getElementById("home-btn").onclick = () => {
 
 document.getElementById("back-home-btn").onclick = () => {
   setMode("home");
+};
+
+document.getElementById("creator-mode-template").onclick = () => {
+  renderTemplates();
+  setCreatorMode("template");
+};
+
+document.getElementById("creator-mode-custom").onclick = () => {
+  setCreatorMode("custom");
 };
 
 document.getElementById("gen-character-btn").onclick = () => {
@@ -820,6 +1217,18 @@ document.getElementById("apply-template-btn").onclick = () => {
   applyTemplateToFields();
 };
 
+document.getElementById("gen-custom-character-btn").onclick = () => {
+  generateCustomCharacter();
+};
+
+document.getElementById("random-custom-character-btn").onclick = () => {
+  offlineGenerateCustomCharacter();
+};
+
+document.getElementById("apply-custom-bg-btn").onclick = () => {
+  applyCustomToBackground();
+};
+
 document.getElementById("enter-game-btn").onclick = () => {
   enterGame();
 };
@@ -831,12 +1240,14 @@ document.getElementById("load-models-btn").onclick = () => {
 document.getElementById("edit-character-btn").onclick = () => {
   renderTemplates();
   setMode("creator");
+  setCreatorMode(creatorMode);
   const tipEl = document.getElementById("creator-tip");
-  if (tipEl) tipEl.textContent = "更换角色会重新开局。请选择模板并生成/手写，然后点击“进入游戏界面”。";
+  if (tipEl) tipEl.textContent = "更换角色会重新开局。可选“模板角色”或“自定义角色”，生成或手写后再进入游戏界面。";
 };
 
 document.getElementById("restart-game-btn").onclick = () => {
   resetProgress();
+  resetPlayerState();
   lastPrompt = "";
   clearLog();
   setMode("game");
@@ -854,7 +1265,8 @@ document.getElementById("save-api").onclick = () => {
   localStorage.setItem("triad-api-model", model);
   localStorage.setItem("triad-api-key", key);
   const msg = "API 配置已保存。";
-  appendLog(msg, currentEvent, "提示");
+  const apiTip = document.getElementById("api-tip");
+  if (apiTip) apiTip.textContent = msg;
   if (mode === "creator") {
     const tipEl = document.getElementById("creator-tip");
     if (tipEl) tipEl.textContent = msg;
@@ -871,7 +1283,8 @@ document.getElementById("clear-api").onclick = () => {
   localStorage.removeItem("triad-api-key");
   localStorage.removeItem("triad-model-list");
   const msg = "API 配置已清空，将使用离线叙事。";
-  appendLog(msg, currentEvent, "提示");
+  const apiTip = document.getElementById("api-tip");
+  if (apiTip) apiTip.textContent = msg;
   if (mode === "creator") {
     const tipEl = document.getElementById("creator-tip");
     if (tipEl) tipEl.textContent = msg;
@@ -885,11 +1298,15 @@ document.getElementById("clear-api").onclick = () => {
   document.getElementById("api-base").value = sanitizeApiBase(b);
   document.getElementById("api-model").value = (m || "").trim();
   document.getElementById("api-key").value = k;
+  const apiTip = document.getElementById("api-tip");
+  if (apiTip) {
+    apiTip.textContent = (b && m && k) ? "已载入已保存的 API 配置。" : "未配置 API，将使用离线叙事模拟。";
+  }
   const corsTip = document.getElementById("cors-tip");
   if (corsTip) {
     const isFile = (location && location.protocol === "file:");
     if (isFile) {
-      corsTip.innerHTML = "检测到你是用 <code>file://</code> 打开页面：浏览器的 Origin 为 <code>null</code>，很多 API 会直接拒绝或 CORS 失败。建议用本地静态服务器打开（例如在本目录运行 <code>node serve.js</code>），并确保你的 Base URL 支持浏览器 CORS。";
+      corsTip.innerHTML = "检测到你是用 <code>file://</code> 打开页面：浏览器的 Origin 为 <code>null</code>，很多 API 会直接拒绝或 CORS 失败。建议用本地静态服务器打开（例如运行 <code>python -m http.server 8000</code>），并确保你的 Base URL 支持浏览器 CORS。";
     } else {
       corsTip.textContent = "提示：若出现 CORS/Failed to fetch，说明该 Base URL 不允许浏览器直连；需要换一个支持 CORS 的 OpenAI 兼容网关/后端。";
     }
