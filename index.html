@@ -565,6 +565,120 @@ function tryParseJsonResponse(text) {
   return extractJsonObject(raw);
 }
 
+function extractTextFromCompletionJson(data) {
+  if (!data) return "";
+  if (typeof data === "string") return data;
+
+  const choices = Array.isArray(data?.choices) ? data.choices : null;
+  const first = choices && choices.length ? choices[0] : null;
+  if (first) {
+    if (typeof first?.text === "string" && first.text.trim()) return first.text;
+
+    const msg = first?.message;
+    if (typeof msg === "string" && msg.trim()) return msg;
+
+    const content = msg?.content;
+    if (typeof content === "string" && content.trim()) return content;
+    if (Array.isArray(content)) {
+      const parts = content
+        .map(p => (typeof p?.text === "string" ? p.text : (typeof p?.content === "string" ? p.content : "")))
+        .filter(Boolean);
+      if (parts.length) return parts.join("");
+    }
+
+    const delta = first?.delta;
+    const dContent = delta?.content;
+    if (typeof dContent === "string" && dContent) return dContent;
+    if (Array.isArray(dContent)) {
+      const parts = dContent
+        .map(p => (typeof p?.text === "string" ? p.text : (typeof p?.content === "string" ? p.content : "")))
+        .filter(Boolean);
+      if (parts.length) return parts.join("");
+    }
+
+    if (typeof first?.content === "string" && first.content.trim()) return first.content;
+    if (typeof msg?.tool_calls === "string" && msg.tool_calls.trim()) return msg.tool_calls;
+  }
+
+  if (typeof data?.output_text === "string" && data.output_text.trim()) return data.output_text;
+  if (typeof data?.response === "string" && data.response.trim()) return data.response;
+
+  const out = Array.isArray(data?.output) ? data.output : null;
+  if (out && out.length) {
+    for (const item of out) {
+      const content = item?.content;
+      if (typeof item?.text === "string" && item.text.trim()) return item.text;
+      if (typeof content === "string" && content.trim()) return content;
+      if (Array.isArray(content)) {
+        const texts = content
+          .map(p => (typeof p?.text === "string" ? p.text : (typeof p?.content === "string" ? p.content : "")))
+          .filter(Boolean);
+        if (texts.length) return texts.join("");
+      }
+    }
+  }
+
+  const msg = data?.message;
+  if (typeof msg?.content === "string" && msg.content.trim()) return msg.content;
+
+  const candidates = Array.isArray(data?.candidates) ? data.candidates : null;
+  const cand = candidates && candidates.length ? candidates[0] : null;
+  if (cand) {
+    const parts = cand?.content?.parts;
+    if (Array.isArray(parts)) {
+      const texts = parts.map(p => p?.text).filter(Boolean);
+      if (texts.length) return texts.join("");
+    }
+    if (typeof cand?.content === "string" && cand.content.trim()) return cand.content;
+  }
+
+  return "";
+}
+
+function extractTextFromChunkedLines(raw) {
+  const text = String(raw || "");
+  if (!text.trim()) return null;
+
+  const lines = text.split(/\r?\n/);
+  let acc = "";
+  let sawAny = false;
+
+  for (const line of lines) {
+    let t = line.trim();
+    if (!t) continue;
+
+    if (t.startsWith("data:")) t = t.slice(5).trim();
+    if (!t || t === "[DONE]") continue;
+
+    try {
+      const obj = JSON.parse(t);
+      sawAny = true;
+      const chunk = extractTextFromCompletionJson(obj);
+      if (chunk) acc += chunk;
+    } catch {
+      // ignore non-JSON lines
+    }
+  }
+
+  if (!sawAny) return null;
+  return acc.trim() ? acc : null;
+}
+
+function decodeModelText(raw) {
+  const rawText = String(raw || "");
+  let data = null;
+  try { data = JSON.parse(rawText); } catch {}
+  if (data) {
+    const text = extractTextFromCompletionJson(data);
+    if (text) return { text, data };
+    return { text: "", data };
+  }
+  const streamed = extractTextFromChunkedLines(rawText);
+  if (streamed) return { text: streamed, data: null, streamed: true };
+  if (/(^|\n)\s*data:\s*/i.test(rawText)) return { text: "", data: null, streamed: true };
+  return { text: rawText.trim(), data: null };
+}
+
 function applyStateUpdate(next) {
   if (!next) return;
   if (!playerState) playerState = defaultPlayerState();
@@ -637,7 +751,8 @@ async function sendToModel(cmd, isRegen=false) {
       { role: "user", content: user }
     ],
     temperature: 0.85,
-    max_tokens: 900
+    max_tokens: 900,
+    stream: false
   };
   try {
     const res = await fetch(base + "/chat/completions", {
@@ -649,13 +764,16 @@ async function sendToModel(cmd, isRegen=false) {
       body: JSON.stringify(payload)
     });
     const raw = await res.text();
-    let data = null;
-    try { data = JSON.parse(raw); } catch { data = { raw }; }
     if (!res.ok) {
+      let data = null;
+      try { data = JSON.parse(raw); } catch {}
       const msg = data?.error?.message || data?.error || data?.message || raw || "请求失败";
       throw new Error(`${res.status} ${res.statusText}: ${msg}`.trim());
     }
-    const text = data?.choices?.[0]?.message?.content || "（无返回内容）";
+    const decoded = decodeModelText(raw);
+    const text = (decoded?.text || "").trim();
+    if (!text) throw new Error("模型返回空内容（可能是服务端默认 stream=true 或返回结构不兼容）");
+
     const obj = tryParseJsonResponse(text);
     const story = (obj && typeof obj === "object") ? String(obj.story || obj.text || obj.narrative || "").trim() : "";
     if (obj && typeof obj === "object") applyStateUpdate(obj.state || obj);
@@ -932,7 +1050,8 @@ async function generateCustomCharacter() {
       { role: "user", content: user }
     ],
     temperature: 0.9,
-    max_tokens: 380
+    max_tokens: 380,
+    stream: false
   };
 
   try {
@@ -945,13 +1064,14 @@ async function generateCustomCharacter() {
       body: JSON.stringify(payload)
     });
     const raw = await res.text();
-    let data = null;
-    try { data = JSON.parse(raw); } catch { data = { raw }; }
     if (!res.ok) {
+      let data = null;
+      try { data = JSON.parse(raw); } catch {}
       const msg = data?.error?.message || data?.error || data?.message || raw || "请求失败";
       throw new Error(`${res.status} ${res.statusText}: ${msg}`.trim());
     }
-    const text = data?.choices?.[0]?.message?.content || "";
+    const decoded = decodeModelText(raw);
+    const text = (decoded?.text || "").trim();
     const obj = extractJsonObject(text);
     if (!obj || !obj.name || !obj.background) throw new Error("返回不是可解析的 JSON");
 
@@ -1017,7 +1137,8 @@ async function generateCharacter() {
       { role: "user", content: user }
     ],
     temperature: 0.9,
-    max_tokens: 380
+    max_tokens: 380,
+    stream: false
   };
 
   try {
@@ -1030,13 +1151,14 @@ async function generateCharacter() {
       body: JSON.stringify(payload)
     });
     const raw = await res.text();
-    let data = null;
-    try { data = JSON.parse(raw); } catch { data = { raw }; }
     if (!res.ok) {
+      let data = null;
+      try { data = JSON.parse(raw); } catch {}
       const msg = data?.error?.message || data?.error || data?.message || raw || "请求失败";
       throw new Error(`${res.status} ${res.statusText}: ${msg}`.trim());
     }
-    const text = data?.choices?.[0]?.message?.content || "";
+    const decoded = decodeModelText(raw);
+    const text = (decoded?.text || "").trim();
     const obj = extractJsonObject(text);
     if (!obj || !obj.name || !obj.background) throw new Error("返回不是可解析的 JSON");
 
