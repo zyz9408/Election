@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>《黑社会 1+2》时间线文字冒险</title>
+<style>
+  :root {
+    --bg: #0c0c0f;
+    --panel: #1b1b21;
+    --accent: #c1121f;
+    --muted: #9ea3b0;
+    --text: #e8e8f0;
+    --card: #121218;
+    --glow: 0 0 25px rgba(193, 18, 31, 0.3);
+    --font: "Space Grotesk", "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    font-family: var(--font);
+    background: radial-gradient(circle at 20% 20%, rgba(193,18,31,0.08), transparent 40%), linear-gradient(160deg, #0f0f17 0%, #0b0b0e 100%);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 18px 24px;
+    display: flex; justify-content: space-between; align-items: center;
+    background: #0a0a0d;
+    border-bottom: 1px solid #252530;
+    letter-spacing: 0.5px;
+  }
+  header h1 { margin: 0; font-size: 22px; }
+  header .meta { font-size: 12px; color: var(--muted); }
+  main { flex: 1; display: grid; gap: 14px; padding: 14px; }
+  body.mode-game main { grid-template-columns: 280px 1fr 320px; }
+  body.mode-creator main { grid-template-columns: 1fr; max-width: 860px; margin: 0 auto; }
+  body.mode-home main { display: none; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid #252530;
+    border-radius: 10px;
+    padding: 14px;
+    box-shadow: var(--glow);
+  }
+  .panel h2 {
+    margin: 0 0 10px 0;
+    font-size: 15px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #ffede1;
+  }
+  label { display: block; font-size: 12px; margin: 6px 0 4px; color: var(--muted); }
+  input, select, textarea {
+    width: 100%; padding: 8px 10px;
+    background: #0d0d12; color: var(--text);
+    border: 1px solid #262631;
+    border-radius: 6px;
+    font-family: var(--font); font-size: 13px;
+  }
+  textarea { resize: vertical; min-height: 68px; }
+  button {
+    background: var(--accent); color: #fff;
+    border: none; border-radius: 8px;
+    padding: 10px 12px; cursor: pointer;
+    font-weight: 600; letter-spacing: 0.4px;
+    transition: transform 0.1s ease, box-shadow 0.2s ease;
+  }
+  button:hover { transform: translateY(-1px); box-shadow: var(--glow); }
+  .btn-ghost { background: transparent; border: 1px solid #2f2f38; color: var(--text); font-weight: 600; }
+  .btn-ghost:hover { border-color: var(--accent); background: rgba(193,18,31,0.08); }
+  .stack { display: flex; gap: 8px; flex-wrap: wrap; }
+  .log {
+    background: var(--card);
+    border: 1px solid #252530;
+    border-radius: 12px;
+    padding: 16px;
+    height: calc(100vh - 220px);
+    overflow-y: auto;
+    line-height: 1.7;
+    position: relative;
+  }
+  .log-entry { margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px dashed #2f2f38; }
+  .log-entry:last-child { border-bottom: none; }
+  .event-tag { display: inline-block; padding: 3px 8px; border-radius: 999px; background: rgba(193,18,31,0.12); color: #ffb4a4; font-size: 11px; margin-right: 8px; }
+  .timeline-item {
+    padding: 10px; margin-bottom: 8px;
+    border-radius: 8px; border: 1px solid #252530;
+    background: #111118;
+    cursor: pointer;
+    transition: border 0.15s ease, transform 0.1s ease;
+  }
+  .timeline-item:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .timeline-item.active { border-color: var(--accent); box-shadow: var(--glow); }
+  .timeline-item.selected { border-color: #ff7a59; box-shadow: 0 0 20px rgba(255,122,89,0.18); }
+  .timeline-item.locked { opacity: 0.45; cursor: not-allowed; }
+  .timeline-item.locked:hover { border-color: #252530; transform: none; box-shadow: none; }
+  .small { font-size: 12px; color: var(--muted); }
+  .choice-area { margin-top: 12px; }
+  .pill { background: #1f1f2b; padding: 6px 10px; border-radius: 999px; display: inline-block; margin-right: 8px; font-size: 12px; color: #e7d7d0; }
+  .footer {
+    padding: 10px 18px; font-size: 12px; color: var(--muted);
+    border-top: 1px solid #252530; background: #0a0a0d;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+
+  /* Views */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    background: radial-gradient(circle at 20% 20%, rgba(193,18,31,0.10), transparent 40%), rgba(0,0,0,0.55);
+    backdrop-filter: blur(10px);
+    z-index: 20;
+  }
+  body.mode-home .overlay { display: flex; }
+  .home-card { max-width: 880px; width: 100%; }
+  .home-hero { font-size: 22px; margin: 0 0 8px; letter-spacing: 0.4px; }
+  .home-text { color: #d7d7e7; line-height: 1.75; font-size: 13px; }
+
+  #creator-section { display: none; }
+  #game-tools { display: none; }
+  body.mode-creator #creator-section { display: block; }
+  body.mode-game #game-tools { display: block; }
+  body.mode-creator #story-panel, body.mode-creator #timeline-panel { display: none; }
+  body.mode-creator #regenerate-btn { display: none; }
+
+  /* Character templates */
+  .template-list { display: grid; gap: 10px; margin-top: 10px; }
+  .template-card {
+    padding: 10px;
+    border-radius: 10px;
+    border: 1px solid #252530;
+    background: #111118;
+    cursor: pointer;
+    transition: border 0.15s ease, transform 0.1s ease;
+  }
+  .template-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .template-card.selected { border-color: var(--accent); box-shadow: var(--glow); }
+  .template-title { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .template-title strong { font-size: 13px; }
+</style>
+</head>
+<body class="mode-home">
+<header>
+  <div>
+    <h1>《黑社会 1+2》时间线文字冒险</h1>
+    <div class="meta">杜琪峰风格 · 选话事人前开局 · 每次输出 500 字以上 · 强调角色心理与现场细节</div>
+  </div>
+  <div class="stack" style="align-items:center;">
+    <div class="meta" id="header-status">主界面</div>
+    <button id="home-btn" class="btn-ghost">主界面</button>
+  </div>
+</header>
+
+<div id="home-screen" class="overlay">
+  <div class="panel home-card">
+    <div class="home-hero">你不是主角，但你也会改变局势。</div>
+    <div class="home-text">
+      故事严格从“选举前夕”开始：阿樂与大D拉票，叔父辈表面讲规矩，背后各有算盘。你将以一个架空人物切入主线，
+      你的站队、交易与背叛会改变细节回响，并反过来影响你在后续节点里的代价与位置。
+    </div>
+    <div class="stack" style="margin-top:12px;">
+      <button id="home-start-btn">开始游戏</button>
+    </div>
+    <div class="small" style="margin-top:10px;">
+      流程：主界面 → 角色模板选择/生成（可手写） → 进入游戏界面。<br/>
+      提示：若浏览器直连 OpenAI/兼容 API 需后端支持 CORS；也可填自己的 OpenAI 格式代理地址。
+    </div>
+  </div>
+</div>
+
+<main>
+  <section class="panel" id="config">
+    <h2>角色创建</h2>
+    <div id="creator-section">
+      <label>默认模板（点击选择）</label>
+      <div id="template-list" class="template-list"></div>
+      <label>自定义模板（可选）</label>
+      <textarea id="custom-template" placeholder="用一句话写你的身份与欲望，例如：我在荃湾替人看场，手上有去广州的过境车线，想趁选举捞一笔，又怕惹到阿樂。"></textarea>
+      <div class="stack" style="margin-top:10px;">
+        <button id="gen-character-btn">生成角色</button>
+        <button id="random-character-btn" class="btn-ghost">随机一份</button>
+        <button id="apply-template-btn" class="btn-ghost">套用模板</button>
+      </div>
+      <div class="stack" style="margin-top:8px;">
+        <button id="enter-game-btn">进入游戏界面</button>
+        <button id="back-home-btn" class="btn-ghost">返回主界面</button>
+      </div>
+      <div class="small" id="creator-tip" style="margin-top:8px;"></div>
+      <hr style="border:none; border-top:1px solid #252530; margin:12px 0;">
+    </div>
+    <div id="game-tools">
+      <div class="small">你正在游戏中。需要更换角色或模板？</div>
+      <div class="stack" style="margin-top:8px;">
+        <button id="edit-character-btn" class="btn-ghost">更换角色（重新开局）</button>
+        <button id="restart-game-btn" class="btn-ghost">重新开局</button>
+      </div>
+      <hr style="border:none; border-top:1px solid #252530; margin:12px 0;">
+    </div>
+    <label>角色姓名</label>
+    <input id="char-name" placeholder="输入姓名，如：林道行" />
+    <label>外形</label>
+    <input id="char-look" placeholder="高瘦、疤痕、金边眼镜..." />
+    <label>年龄</label>
+    <input id="char-age" type="number" min="16" max="80" placeholder="28" />
+    <label>性别</label>
+    <select id="char-gender">
+      <option value="男">男</option>
+      <option value="女">女</option>
+      <option value="其他">其他</option>
+    </select>
+    <label>背景/身份</label>
+    <textarea id="char-bg" placeholder="例：澳门混血，会计出身，曾在十三太保做过跟单，讨厌无规矩的江湖。"></textarea>
+    <div class="stack" style="margin-top:10px;">
+      <button id="regenerate-btn" class="btn-ghost" title="重新生成当前内容">重新生成上一段</button>
+    </div>
+
+    <h2 style="margin-top:18px;">API 接入</h2>
+    <div class="small" id="cors-tip" style="margin-top:6px;"></div>
+    <label>Base URL</label>
+    <input id="api-base" placeholder="示例：https://api.openai.com/v1 或 https://generativelanguage.googleapis.com/v1beta/openai" />
+    <div class="small" style="margin-top:6px;">注意：这里需要 OpenAI 兼容接口；Gemini 请使用 <code>.../v1beta/openai</code>，不要填 <code>.../v1beta/models</code>。</div>
+    <label>模型</label>
+    <div class="stack">
+      <input id="api-model" list="api-models" placeholder="gpt-4o-mini" style="flex: 1 1 220px;" />
+      <button id="load-models-btn" class="btn-ghost" style="white-space:nowrap;">读取模型列表</button>
+    </div>
+    <datalist id="api-models"></datalist>
+    <div class="small" id="models-tip" style="margin-top:6px;"></div>
+    <label>API Key</label>
+    <input id="api-key" type="password" placeholder="sk-..." />
+    <div class="stack" style="margin-top:10px;">
+      <button id="save-api">保存配置</button>
+      <button id="clear-api">清空</button>
+    </div>
+    <div class="small" style="margin-top:8px;">提示：若未填 Key，将使用本地离线叙事模拟；可在右侧事件列表快速跳转。</div>
+  </section>
+
+  <section class="panel" id="story-panel">
+    <h2>故事记录</h2>
+    <div class="log" id="log"></div>
+    <div class="choice-area">
+      <label>输入命令 / 选择（示例：与大D谈判、尾随四眼明、打电话给師爺蘇）</label>
+      <input id="player-input" placeholder="按江湖直觉行动..." />
+      <div class="stack" style="margin-top:8px;">
+        <button id="send-btn">提交指令</button>
+        <button id="jump-btn">跳转到选中事件</button>
+        <button id="next-event-btn" class="btn-ghost">推进主线</button>
+      </div>
+      <div class="small" style="margin-top:6px;">每次请求会附带时间线摘要提醒模型；可通过“重新生成”刷新当前场景；保持角色特征，比如師爺蘇的口吃、鄧伯的肥胖、阿樂的陰险等。</div>
+    </div>
+  </section>
+
+  <section class="panel" id="timeline-panel">
+    <h2>时间线 / 跳转</h2>
+    <div id="timeline"></div>
+    <div class="small" style="margin-top:10px;">点击事件可跳转重演；遵循大纲，不跳过月份；可插入细节填充空白。</div>
+  </section>
+</main>
+
+<div class="footer">
+  <div>故事遵循《黑社会》1+2主线：选话事人前 → 龙头之争 → 奪棍 → 结义 → 杀大D → 两年后连任 → 北上 → 全面开战 → 终局</div>
+  <div>UI 公开 API 设置 · 支持网络搜索提示（可手动在提示中要求搜索）</div>
+</div>
+
+<script>
+const timeline = [
+  { id: "E01", title: "选举前夕", focus: "佐敦阿樂 vs 荃灣大D，叔父紧张拉票", summary: "和聯勝两年一选，新任辦事人之争。鄧伯支持阿樂，大D财力汹汹。你从此刻介入。"},
+  { id: "E02", title: "叔父会议", focus: "鄧伯力排众议，阿樂当选", summary: "鄧伯强调平衡，反对一人独大。投票后阿樂胜出，大D心怀不满。"},
+  { id: "E03", title: "信物危机", focus: "龙头棍被转移，大D恼羞成怒", summary: "大D羞辱龙根叔，威胁吹鸡交龙头棍。吹鸡让四眼明偷运去广州。众人被 O 记拘留，吹鸡重伤。"},
+  { id: "E04", title: "奪棍大戰", focus: "中港边境混战", summary: "阿樂派師爺蘇与大头接棍，大D雇东莞仔截杀。东莞仔倒戈将棍交阿樂杀手飞機，Jimmy仔介入，棍回到阿樂手。"},
+  { id: "E05", title: "结义与清算", focus: "杀吹鸡，结拜大D", summary: "阿樂指使杀吹鸡，保释大D示和。关帝前斩鸡头结拜，共吞尖沙咀恐龙地盘。收 Jimmy 仔、东莞仔、飞機等为契仔。"},
+  { id: "E06", title: "水塘终局", focus: "阿樂杀大D夫妇", summary: "钓鱼时大D提双坐馆，阿樂起杀心，石砸大D头并勒死其妻，掩埋屍体。阿樂独揽大权。"},
+  { id: "E07", title: "两年后连任", focus: "阿樂恋权，飞機与东莞仔野心浮现", summary: "阿樂任期将满，欲改规例连任；表面支持飞機。东莞仔公开要当辦事人。Jimmy仔本专注物流，不想争。"},
+  { id: "E08", title: "北上与被捕", focus: "Jimmy仔被公安点醒", summary: "Jimmy仔与師爺蘇在内地被捕，石副厅长要求他想做生意就必须是辦事人。Jimmy仔被迫回港参选。"},
+  { id: "E09", title: "叔父撕破脸", focus: "鄧伯拒绝连任要求", summary: "Jimmy仔表态参选并展现金钱，鄧伯支持他并当众否决阿樂改规。楼梯间，阿樂推鄧伯致重伤身亡。"},
+  { id: "E10", title: "全面开战", focus: "阿樂联东莞仔清洗异己", summary: "阿樂绑架郭先生、驱使飞機杀人。Jimmy仔黑化，杀疑似卧底阿力。狗场刑求，震慑火牛等倒戈。"},
+  { id: "E11", title: "棺材舖血斗", focus: "阿武救郭先生战东莞仔", summary: "阿武为救郭先生与东莞仔激战，阿武被刺死，郭先生获救，东莞仔潜逃。"},
+  { id: "E12", title: "阿樂殒落", focus: "车内被反戈铁锤砸死", summary: "阿樂等手下汇报不知已被收买，车内被火牛等铁锤杀死。一代梟雄终结。"},
+  { id: "E13", title: "葬礼终局", focus: "Jimmy仔葬鄧伯，放入龙头棍", summary: "Jimmy仔成新任辦事人，把龙头棍随鄧伯陪葬，试图终结传统黑社会模式。"},
+  { id: "E14", title: "山顶宿命", focus: "石副厅长要求世袭制", summary: "深圳山顶，Jimmy仔以为洗白，石副厅长要求改为世袭，永远做龙头。Jimmy崩溃，未来漆黑。"}
+];
+
+const templates = [
+  {
+    id: "T01",
+    name: "佐敦茶楼跑腿",
+    tag: "阿樂线",
+    desc: "你在佐敦茶楼与街口两头跑，替叔父递话、替兄弟点菜，最会听风向。你见过阿樂一次：斯文、收着笑，眼里却像在算账。",
+    defaults: { gender: "男", ageMin: 20, ageMax: 30 }
+  },
+  {
+    id: "T02",
+    name: "荃湾看场放数",
+    tag: "大D线",
+    desc: "你在荃湾替人看场兼放数，手上有几个小弟，靠拳头也靠账本。大D的钱味你闻得最清楚：他肯砸，但也最翻脸。",
+    defaults: { gender: "男", ageMin: 24, ageMax: 36 }
+  },
+  {
+    id: "T03",
+    name: "码头物流掮客",
+    tag: "Jimmy线",
+    desc: "你混在货柜与运单之间，认识码头工头也认识水客。你向往洗白，觉得江湖只是手段——但选举前夕，手段往往把人拖进泥里。",
+    defaults: { gender: "男", ageMin: 22, ageMax: 35 }
+  },
+  {
+    id: "T04",
+    name: "中港过境车司机",
+    tag: "边境线",
+    desc: "你跑中港线，对路、对关口、对规矩都熟。你知道“龙头棍”这种东西不是木头，是命；一旦沾手，就很难洗干净。",
+    defaults: { gender: "男", ageMin: 21, ageMax: 40 }
+  },
+  {
+    id: "T05",
+    name: "师爷苏的账房外包",
+    tag: "规矩线",
+    desc: "你替人做账、抹平账面，偶尔替師爺蘇跑文件。他说话总是结巴，怕事又精明；你学到的是：规矩是刀，谁拿着谁就赢。",
+    defaults: { gender: "其他", ageMin: 20, ageMax: 34 }
+  }
+];
+
+let mode = "home"; // home | creator | game
+let currentEvent = "E01";
+let selectedEvent = "E01";
+let visitedEvents = new Set(["E01"]);
+let selectedTemplateId = templates[0]?.id || "T01";
+let lastPrompt = "";
+const logEl = document.getElementById("log");
+const timelineEl = document.getElementById("timeline");
+
+function renderTimeline() {
+  timelineEl.innerHTML = "";
+  timeline.forEach(ev => {
+    const div = document.createElement("div");
+    const unlocked = visitedEvents.has(ev.id);
+    const cls = ["timeline-item"];
+    if (ev.id === currentEvent) cls.push("active");
+    if (ev.id === selectedEvent) cls.push("selected");
+    if (!unlocked) cls.push("locked");
+    div.className = cls.join(" ");
+    div.innerHTML = `<div><strong>${ev.id}</strong> · ${ev.title}</div><div class="small">${ev.focus}</div>`;
+    div.onclick = () => {
+      if (!unlocked) {
+        appendLog("该节点尚未发生，先用“推进主线”解锁下一节点。", currentEvent, "提示");
+        return;
+      }
+      selectedEvent = ev.id;
+      renderTimeline();
+    };
+    timelineEl.appendChild(div);
+  });
+}
+
+function appendLog(text, evId = currentEvent, tag = "剧情") {
+  const wrap = document.createElement("div");
+  wrap.className = "log-entry";
+  const tagEl = `<span class="event-tag">${tag}</span><span class="small">${evId}</span>`;
+  wrap.innerHTML = `${tagEl} ${text}`;
+  logEl.appendChild(wrap);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function buildSystemPrompt() {
+  const ev = timeline.find(t => t.id === currentEvent);
+  const recap = timeline.map(t => `${t.id}:${t.title}-${t.focus}`).join(" | ");
+  return [
+    "你是一名叙事引擎，背景为杜琪峰《黑社会》1+2，按事件顺序推进，不跳过月份或年份。",
+    "角色特征必须保持：師爺蘇口吃谨慎，鄧伯肥胖慈祥但有威严，阿樂阴险深城，大D暴躁财大气粗，飞機狠辣，东莞仔野心，Jimmy仔务实想洗白。",
+    "每次输出 500 字以上，细节丰富但不做无关推进；每个选择影响后续。",
+    `当前事件：${ev.id} - ${ev.title} - ${ev.focus}。摘要：${ev.summary}`,
+    `全局时间线：${recap}。`,
+    "玩家是自定义的新角色，与主线交织，但需尊重主线走向。",
+    "允许插入小故事填充时间，但不能违背大纲。",
+    "若玩家要求网络搜索故事，你可以在回复中注明“（已根据网络搜索补充）”。"
+  ].join("\n");
+}
+
+function buildUserPrompt(cmd) {
+  const name = document.getElementById("char-name").value || "无名";
+  const look = document.getElementById("char-look").value || "外形未设定";
+  const age = document.getElementById("char-age").value || "未知";
+  const gender = document.getElementById("char-gender").value || "未设";
+  const bg = document.getElementById("char-bg").value || "背景未设定";
+  return `玩家角色：${name}，${gender}，${age}岁，外形：${look}，背景：${bg}。当前事件${currentEvent}。玩家行动：${cmd}`;
+}
+
+async function sendToModel(cmd, isRegen=false) {
+  const sys = buildSystemPrompt();
+  const user = buildUserPrompt(cmd);
+  lastPrompt = cmd;
+  const base = sanitizeApiBase(document.getElementById("api-base").value);
+  const model = document.getElementById("api-model").value.trim();
+  const key = document.getElementById("api-key").value.trim();
+  if (!base || !model || !key) {
+    // offline fallback
+    const ev = timeline.find(t => t.id === currentEvent);
+    const filler = `（离线叙事模拟）${ev.title}阶段，你的行动「${cmd}」触发连锁：街头风声鹤唳，叔父们窃窃私语，鄧伯皱着眉头，師爺蘇结巴地提醒你规矩。阿樂半眯眼，试探你站在哪边；大D捏着拳头，财力收买外围。你必须在权力与生存之间作选择。`;
+    const longDesc = `${filler} 你一边回想自己${bgHint()}，一边权衡——若靠近阿樂，可能卷入杀吹鸡、奪棍的暗流；若接近大D，要承受其暴躁与警司盯梢的风险。此刻路灯闪烁，老式电话亭里传来断断续续的消息，可能是四眼明关于龙头棍的坐标，也可能是 O 记约谈的信号。夜色里，九龙的潮湿空气带着柴油味，你听见远处机枪式的鞭炮声，暗示有人在给兄弟“吹鸡”。你踌躇，是否要去佐敦茶楼与阿樂密谈，还是前往荃湾仓库探大D，抑或暗中跟踪四眼明北上。记住，每一步都将影响后续：奪棍混战、结义与背叛、水塘血案、两年后连任、北上黑化、车内铁锤、山顶宿命。现在，请谨慎落子。`;
+    appendLog(longDesc, currentEvent, isRegen ? "重新生成" : "剧情");
+    return;
+  }
+  appendLog("向模型请求中...", currentEvent, isRegen ? "重新生成" : "请求");
+  const payload = {
+    model,
+    messages: [
+      { role: "system", content: sys },
+      { role: "user", content: user }
+    ],
+    temperature: 0.85,
+    max_tokens: 900
+  };
+  try {
+    const res = await fetch(base + "/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${key}`
+      },
+      body: JSON.stringify(payload)
+    });
+    const raw = await res.text();
+    let data = null;
+    try { data = JSON.parse(raw); } catch { data = { raw }; }
+    if (!res.ok) {
+      const msg = data?.error?.message || data?.error || data?.message || raw || "请求失败";
+      throw new Error(`${res.status} ${res.statusText}: ${msg}`.trim());
+    }
+    const text = data?.choices?.[0]?.message?.content || "（无返回内容）";
+    appendLog(text, currentEvent, isRegen ? "重新生成" : "剧情");
+  } catch (err) {
+    appendLog("请求失败，使用离线叙事模拟。错误：" + err.message + "（若为 CORS/Failed to fetch：该 API 不允许浏览器直连，需使用支持 CORS 的网关/后端）", currentEvent, "错误");
+  }
+}
+
+function bgHint() {
+  const bg = document.getElementById("char-bg").value || "无背景";
+  return "的背景（" + bg + "）";
+}
+
+function normalizeBase(raw) {
+  return (raw || "").trim().replace(/\/+$/, "");
+}
+
+function resolveV1Base(raw) {
+  const base = normalizeBase(raw);
+  if (!base) return "";
+  try {
+    const url = new URL(base);
+    const path = url.pathname || "/";
+    if (path === "/" || path === "") {
+      url.pathname = "/v1";
+      return normalizeBase(url.toString());
+    }
+    return base;
+  } catch {
+    return base;
+  }
+}
+
+function sanitizeApiBase(raw) {
+  let base = normalizeBase(raw);
+  if (!base) return "";
+
+  if (/generativelanguage\.googleapis\.com/i.test(base)) {
+    base = base.replace(/\/v1beta\/models\b/i, "/v1beta/openai");
+  }
+
+  base = base.replace(/\/chat\/completions$/i, "");
+  base = base.replace(/\/models$/i, "");
+
+  return resolveV1Base(base);
+}
+
+function setMode(nextMode) {
+  mode = nextMode;
+  document.body.classList.remove("mode-home", "mode-creator", "mode-game");
+  document.body.classList.add(`mode-${nextMode}`);
+  const statusEl = document.getElementById("header-status");
+  if (!statusEl) return;
+  if (nextMode === "home") statusEl.textContent = "主界面";
+  else if (nextMode === "creator") statusEl.textContent = "角色创建";
+  else {
+    const ev = timeline.find(t => t.id === currentEvent);
+    statusEl.textContent = ev ? `游戏中 · ${ev.id} ${ev.title}` : "游戏中";
+  }
+}
+
+function clearLog() {
+  logEl.innerHTML = "";
+}
+
+function resetProgress() {
+  currentEvent = "E01";
+  selectedEvent = "E01";
+  visitedEvents = new Set(["E01"]);
+  renderTimeline();
+}
+
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function randInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function renderTemplates() {
+  const listEl = document.getElementById("template-list");
+  if (!listEl) return;
+  listEl.innerHTML = "";
+  templates.forEach(t => {
+    const div = document.createElement("div");
+    div.className = "template-card" + (t.id === selectedTemplateId ? " selected" : "");
+    div.innerHTML = `
+      <div class="template-title">
+        <strong>${t.name}</strong>
+        <span class="small">${t.tag}</span>
+      </div>
+      <div class="small" style="margin-top:6px;">${t.desc}</div>
+    `;
+    div.onclick = () => {
+      selectedTemplateId = t.id;
+      renderTemplates();
+      const tipEl = document.getElementById("creator-tip");
+      if (tipEl) tipEl.textContent = `已选择模板：${t.name}（可生成/随机/套用，也可手写修改）。`;
+    };
+    listEl.appendChild(div);
+  });
+}
+
+function getSelectedTemplate() {
+  return templates.find(t => t.id === selectedTemplateId) || templates[0];
+}
+
+function applyTemplateToFields() {
+  const t = getSelectedTemplate();
+  const custom = (document.getElementById("custom-template")?.value || "").trim();
+  const genderEl = document.getElementById("char-gender");
+  const ageEl = document.getElementById("char-age");
+  if (t.defaults.gender !== "其他") genderEl.value = t.defaults.gender;
+  if (!ageEl.value) ageEl.value = String(randInt(t.defaults.ageMin, t.defaults.ageMax));
+  const bgParts = [t.desc];
+  if (custom) bgParts.push("你自己写的底色是：" + custom);
+  document.getElementById("char-bg").value = bgParts.join("\n");
+  const tipEl = document.getElementById("creator-tip");
+  if (tipEl) tipEl.textContent = `已套用模板：${t.name}。可继续补充细节或直接生成。`;
+}
+
+function offlineGenerateCharacter() {
+  const t = getSelectedTemplate();
+  const custom = (document.getElementById("custom-template")?.value || "").trim();
+
+  const surnames = ["林","陈","黄","张","李","梁","何","郭","邓","许","苏","冯","叶","马","罗","吴","周","郑","潘","沈","宋","邱","曾","胡","唐"];
+  const given1 = ["志","浩","明","文","杰","荣","凯","东","强","成","涛","彬","辉","贤","信","义","俊","朗","新","耀","森","达","翔","铭","锐","衡","昆","庆","安"];
+  const given2 = ["豪","然","生","峰","宁","武","昌","权","远","南","德","霖","航","佑","诚","达","耀","哲","扬","礼","坤","毅"];
+  const looks = [
+    "短发干净，衣着朴素但整齐",
+    "右眉有一道浅疤，眼神不爱停留",
+    "金边眼镜，手指常搓戒指",
+    "手背有旧纹身，站姿总是偏侧",
+    "皮肤黝黑，脖子挂细链，笑得很浅"
+  ];
+  const fears = ["被点名背锅","警察盯上","兄弟出卖","叔父一句话断你路","钱没到手就先丢命"];
+  const desires = ["拿到更稳的口子","替自己找一条洗白的路","在选举里换个靠山","把欠账一次清掉","让家里人不再担心"];
+
+  const gender = t.defaults.gender === "其他" ? pick(["男","女","其他"]) : t.defaults.gender;
+  const age = randInt(t.defaults.ageMin, t.defaults.ageMax);
+  const name = pick(surnames) + pick(given1) + (Math.random() < 0.6 ? pick(given2) : "");
+  const look = pick(looks);
+
+  const bgParts = [
+    t.desc,
+    `你最怕的是${pick(fears)}，最想要的是${pick(desires)}。`,
+    "你不想当英雄，只想活到天亮；但你也清楚，选话事人这种局，没人能完全置身事外。"
+  ];
+  if (custom) bgParts.push("你自己写的底色是：" + custom);
+
+  document.getElementById("char-name").value = name;
+  document.getElementById("char-gender").value = gender;
+  document.getElementById("char-age").value = String(age);
+  document.getElementById("char-look").value = look;
+  document.getElementById("char-bg").value = bgParts.join("");
+
+  const tipEl = document.getElementById("creator-tip");
+  if (tipEl) tipEl.textContent = "已生成角色（离线）。你可以继续修改，然后进入游戏界面。";
+}
+
+function extractJsonObject(text) {
+  const cleaned = (text || "").trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) return null;
+  const jsonStr = cleaned.slice(start, end + 1);
+  try { return JSON.parse(jsonStr); } catch { return null; }
+}
+
+async function generateCharacter() {
+  const tipEl = document.getElementById("creator-tip");
+  if (tipEl) tipEl.textContent = "生成中...";
+
+  const base = sanitizeApiBase(document.getElementById("api-base").value);
+  const model = document.getElementById("api-model").value.trim();
+  const key = document.getElementById("api-key").value.trim();
+
+  if (!base || !model || !key) {
+    offlineGenerateCharacter();
+    return;
+  }
+
+  const t = getSelectedTemplate();
+  const custom = (document.getElementById("custom-template")?.value || "").trim();
+  const sys = [
+    "你是一个角色生成器，为一款基于《黑社会 1+2》的文字冒险生成玩家角色。",
+    "只输出严格 JSON，不要代码块，不要多余文字。",
+    "字段：name, gender, age, look, background。",
+    "要求：贴合 2000s 香港语境；玩家姓名不要使用阿樂/大D/Jimmy仔/鄧伯/东莞仔/飛機/師爺蘇等主角名；",
+    "background 120-220 字；look 15-40 字；用简体中文。",
+    "角色必须能合理介入“和联胜选话事人前夕”。"
+  ].join("\n");
+  const user = [
+    `默认模板：${t.name}（${t.tag}）`,
+    `模板描述：${t.desc}`,
+    custom ? `用户自定义模板：${custom}` : "",
+    "请生成角色 JSON。"
+  ].filter(Boolean).join("\n");
+
+  const payload = {
+    model,
+    messages: [
+      { role: "system", content: sys },
+      { role: "user", content: user }
+    ],
+    temperature: 0.9,
+    max_tokens: 380
+  };
+
+  try {
+    const res = await fetch(base + "/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${key}`
+      },
+      body: JSON.stringify(payload)
+    });
+    const raw = await res.text();
+    let data = null;
+    try { data = JSON.parse(raw); } catch { data = { raw }; }
+    if (!res.ok) {
+      const msg = data?.error?.message || data?.error || data?.message || raw || "请求失败";
+      throw new Error(`${res.status} ${res.statusText}: ${msg}`.trim());
+    }
+    const text = data?.choices?.[0]?.message?.content || "";
+    const obj = extractJsonObject(text);
+    if (!obj || !obj.name || !obj.background) throw new Error("返回不是可解析的 JSON");
+
+    document.getElementById("char-name").value = String(obj.name || "").trim();
+    document.getElementById("char-gender").value = String(obj.gender || "男").trim();
+    document.getElementById("char-age").value = String(obj.age || "").trim();
+    document.getElementById("char-look").value = String(obj.look || "").trim();
+    document.getElementById("char-bg").value = String(obj.background || "").trim();
+
+    if (tipEl) tipEl.textContent = "已生成角色（API）。你可以继续修改，然后进入游戏界面。";
+  } catch (err) {
+    if (tipEl) tipEl.textContent = "生成失败，已改用离线随机。错误：" + err.message;
+    offlineGenerateCharacter();
+  }
+}
+
+async function loadModels() {
+  const tipEl = document.getElementById("models-tip");
+  const listEl = document.getElementById("api-models");
+  if (!tipEl || !listEl) return;
+
+  tipEl.textContent = "读取中...";
+  listEl.innerHTML = "";
+
+  const base = sanitizeApiBase(document.getElementById("api-base").value);
+  const key = document.getElementById("api-key").value.trim();
+  if (!base || !key) {
+    tipEl.textContent = "请先填写 Base URL 与 API Key。";
+    return;
+  }
+
+  const headers = { "Authorization": `Bearer ${key}` };
+  try {
+    const res = await fetch(base + "/models", { method: "GET", headers });
+    const raw = await res.text();
+    let data = null;
+    try { data = JSON.parse(raw); } catch { data = { raw }; }
+    if (!res.ok) {
+      const msg = data?.error?.message || data?.error || data?.message || raw || "请求失败";
+      throw new Error(`${res.status} ${res.statusText}: ${msg}`.trim());
+    }
+    const arr = Array.isArray(data?.data) ? data.data : (Array.isArray(data?.models) ? data.models : []);
+    const ids = arr.map(m => m?.id).filter(Boolean).sort();
+    if (!ids.length) throw new Error("模型列表为空");
+
+    ids.forEach(id => {
+      const opt = document.createElement("option");
+      opt.value = id;
+      listEl.appendChild(opt);
+    });
+
+    localStorage.setItem("triad-model-list", JSON.stringify(ids));
+    tipEl.textContent = `已读取模型：${ids.length} 个`;
+  } catch (err) {
+    tipEl.textContent = "读取失败：" + err.message + "（若为 CORS/Failed to fetch：该 Base URL 不允许浏览器直连，需要换支持 CORS 的网关/后端）";
+  }
+}
+
+function validateCharacter() {
+  const name = document.getElementById("char-name").value.trim();
+  const age = document.getElementById("char-age").value.trim();
+  const look = document.getElementById("char-look").value.trim();
+  const bg = document.getElementById("char-bg").value.trim();
+  if (!name || !age || !look || !bg) return "请把姓名、年龄、外形、背景填完整（或点“生成角色/随机一份”）。";
+  return "";
+}
+
+function enterGame() {
+  const err = validateCharacter();
+  const tipEl = document.getElementById("creator-tip");
+  if (err) {
+    if (tipEl) tipEl.textContent = err;
+    return;
+  }
+
+  if (mode !== "game") {
+    resetProgress();
+    lastPrompt = "";
+    clearLog();
+    appendLog("开局已就绪：你从“选举前夕”切入。输入你的第一条行动指令，故事将按主线推进，但细节将因你而变。", currentEvent, "系统");
+  }
+
+  setMode("game");
+  renderTimeline();
+}
+
+function advanceEvent() {
+  const idx = timeline.findIndex(t => t.id === currentEvent);
+  if (idx < 0 || idx >= timeline.length - 1) {
+    appendLog("主线已到最后一个节点。", currentEvent, "主线");
+    return;
+  }
+  const next = timeline[idx + 1];
+  currentEvent = next.id;
+  selectedEvent = next.id;
+  visitedEvents.add(next.id);
+  renderTimeline();
+  setMode("game");
+  appendLog(`你将主线推进到「${next.title}」。旧账开始要还，新局也开始成形。`, currentEvent, "主线");
+}
+
+document.getElementById("send-btn").onclick = () => {
+  if (mode !== "game") {
+    appendLog("请先进入游戏界面，再提交指令。", currentEvent, "提示");
+    return;
+  }
+  const cmd = document.getElementById("player-input").value.trim() || "静观其变";
+  sendToModel(cmd);
+};
+
+document.getElementById("regenerate-btn").onclick = () => {
+  if (mode !== "game") return;
+  if (!lastPrompt) { appendLog("暂无可重生场景，请先提交一次指令。", currentEvent, "提示"); return; }
+  sendToModel(lastPrompt, true);
+};
+
+document.getElementById("jump-btn").onclick = () => {
+  if (mode !== "game") return;
+  if (!visitedEvents.has(selectedEvent)) {
+    appendLog("该节点尚未发生，无法跳转。", currentEvent, "提示");
+    return;
+  }
+  currentEvent = selectedEvent;
+  renderTimeline();
+  setMode("game");
+  const ev = timeline.find(t => t.id === currentEvent);
+  appendLog(`你跳转回到「${ev?.title || currentEvent}」，准备从此处改写细节。`, currentEvent, "跳转");
+};
+
+document.getElementById("next-event-btn").onclick = () => {
+  if (mode !== "game") return;
+  advanceEvent();
+};
+
+document.getElementById("home-start-btn").onclick = () => {
+  renderTemplates();
+  setMode("creator");
+  const tipEl = document.getElementById("creator-tip");
+  if (tipEl) tipEl.textContent = "请选择一个模板，然后生成/随机/套用，或直接手写角色信息。";
+};
+
+document.getElementById("home-btn").onclick = () => {
+  setMode("home");
+};
+
+document.getElementById("back-home-btn").onclick = () => {
+  setMode("home");
+};
+
+document.getElementById("gen-character-btn").onclick = () => {
+  generateCharacter();
+};
+
+document.getElementById("random-character-btn").onclick = () => {
+  offlineGenerateCharacter();
+};
+
+document.getElementById("apply-template-btn").onclick = () => {
+  applyTemplateToFields();
+};
+
+document.getElementById("enter-game-btn").onclick = () => {
+  enterGame();
+};
+
+document.getElementById("load-models-btn").onclick = () => {
+  loadModels();
+};
+
+document.getElementById("edit-character-btn").onclick = () => {
+  renderTemplates();
+  setMode("creator");
+  const tipEl = document.getElementById("creator-tip");
+  if (tipEl) tipEl.textContent = "更换角色会重新开局。请选择模板并生成/手写，然后点击“进入游戏界面”。";
+};
+
+document.getElementById("restart-game-btn").onclick = () => {
+  resetProgress();
+  lastPrompt = "";
+  clearLog();
+  setMode("game");
+  appendLog("已重新开局，回到选举前夕。你的旧选择被清空，但你的性格与背景仍会影响你下一步。", currentEvent, "系统");
+};
+
+document.getElementById("save-api").onclick = () => {
+  const base = sanitizeApiBase(document.getElementById("api-base").value);
+  const model = document.getElementById("api-model").value.trim();
+  const key = document.getElementById("api-key").value.trim();
+  document.getElementById("api-base").value = base;
+  document.getElementById("api-model").value = model;
+  document.getElementById("api-key").value = key;
+  localStorage.setItem("triad-api-base", base);
+  localStorage.setItem("triad-api-model", model);
+  localStorage.setItem("triad-api-key", key);
+  const msg = "API 配置已保存。";
+  appendLog(msg, currentEvent, "提示");
+  if (mode === "creator") {
+    const tipEl = document.getElementById("creator-tip");
+    if (tipEl) tipEl.textContent = msg;
+  }
+};
+document.getElementById("clear-api").onclick = () => {
+  document.getElementById("api-base").value = "";
+  document.getElementById("api-model").value = "";
+  document.getElementById("api-key").value = "";
+  document.getElementById("api-models").innerHTML = "";
+  document.getElementById("models-tip").textContent = "";
+  localStorage.removeItem("triad-api-base");
+  localStorage.removeItem("triad-api-model");
+  localStorage.removeItem("triad-api-key");
+  localStorage.removeItem("triad-model-list");
+  const msg = "API 配置已清空，将使用离线叙事。";
+  appendLog(msg, currentEvent, "提示");
+  if (mode === "creator") {
+    const tipEl = document.getElementById("creator-tip");
+    if (tipEl) tipEl.textContent = msg;
+  }
+};
+
+(function restore() {
+  const b = localStorage.getItem("triad-api-base") || "";
+  const m = localStorage.getItem("triad-api-model") || "";
+  const k = localStorage.getItem("triad-api-key") || "";
+  document.getElementById("api-base").value = sanitizeApiBase(b);
+  document.getElementById("api-model").value = (m || "").trim();
+  document.getElementById("api-key").value = k;
+  const corsTip = document.getElementById("cors-tip");
+  if (corsTip) {
+    const isFile = (location && location.protocol === "file:");
+    if (isFile) {
+      corsTip.innerHTML = "检测到你是用 <code>file://</code> 打开页面：浏览器的 Origin 为 <code>null</code>，很多 API 会直接拒绝或 CORS 失败。建议用本地静态服务器打开（例如在本目录运行 <code>node serve.js</code>），并确保你的 Base URL 支持浏览器 CORS。";
+    } else {
+      corsTip.textContent = "提示：若出现 CORS/Failed to fetch，说明该 Base URL 不允许浏览器直连；需要换一个支持 CORS 的 OpenAI 兼容网关/后端。";
+    }
+  }
+  try {
+    const saved = JSON.parse(localStorage.getItem("triad-model-list") || "[]");
+    const listEl = document.getElementById("api-models");
+    if (Array.isArray(saved) && listEl) {
+      listEl.innerHTML = "";
+      saved.forEach((id) => {
+        const opt = document.createElement("option");
+        opt.value = id;
+        listEl.appendChild(opt);
+      });
+      const tipEl = document.getElementById("models-tip");
+      if (tipEl && saved.length) tipEl.textContent = `已缓存模型：${saved.length} 个（可点“读取模型列表”刷新）`;
+    }
+  } catch {}
+  renderTemplates();
+  renderTimeline();
+  setMode("home");
+})();
+</script>
+</body>
+</html>
